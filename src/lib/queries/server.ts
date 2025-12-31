@@ -225,8 +225,8 @@ export async function getActiveVoiceSessions(
   if (!sessionsData || sessionsData.length === 0) return [];
 
   // Get unique user IDs and channel IDs
-  const userIds = [...new Set(sessionsData.map((s) => s.user_id))];
-  const channelIds = [...new Set(sessionsData.map((s) => s.channel_id))];
+  const userIds = Array.from(new Set(sessionsData.map((s) => s.user_id)));
+  const channelIds = Array.from(new Set(sessionsData.map((s) => s.channel_id)));
 
   // Fetch member info and channel info in parallel
   const [membersResult, channelsResult] = await Promise.all([

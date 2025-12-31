@@ -187,7 +187,7 @@ export async function getMemberVoiceSessions(
   if (sessions.length === 0) return [];
 
   // Get channel names
-  const channelIds = [...new Set(sessions.map((s) => s.channel_id))];
+  const channelIds = Array.from(new Set(sessions.map((s) => s.channel_id)));
   const { data: channels } = await supabase
     .from('channels')
     .select('id, name')
