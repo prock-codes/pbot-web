@@ -161,12 +161,22 @@ export default async function ServerPage({ params }: ServerPageProps) {
               <div className="space-y-2">
                 {membersResult.members.map((member, index) => {
                   const progress = getXpProgress(member.xp);
+                  // Find the highest level role the member has achieved
+                  const currentRole = levelRoles
+                    .filter((lr) => lr.level <= member.level)
+                    .sort((a, b) => b.level - a.level)[0];
+                  const roleColor = currentRole?.role_color || null;
                   return (
                     <Link
                       key={member.user_id}
                       href={`/${serverId}/${member.user_id}`}
                     >
-                      <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-discord-lighter/50 transition-colors group">
+                      <div
+                        className={`flex items-center gap-4 p-3 rounded-lg hover:bg-discord-lighter/50 transition-colors group ${
+                          roleColor ? 'border-l-4' : ''
+                        }`}
+                        style={roleColor ? { borderLeftColor: roleColor } : undefined}
+                      >
                         {/* Rank */}
                         <div className="w-8 text-center">
                           <span
@@ -194,9 +204,22 @@ export default async function ServerPage({ params }: ServerPageProps) {
 
                         {/* User Info */}
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-white truncate group-hover:text-discord-blurple transition-colors">
-                            {member.display_name || member.username || 'Unknown User'}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-white truncate group-hover:text-discord-blurple transition-colors">
+                              {member.display_name || member.username || 'Unknown User'}
+                            </p>
+                            {currentRole && (
+                              <span
+                                className="hidden sm:inline-flex text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
+                                style={{
+                                  backgroundColor: `${roleColor}20`,
+                                  color: roleColor || undefined,
+                                }}
+                              >
+                                {currentRole.role_name}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-4 text-sm text-gray-400">
                             <span className="w-16">Level <span className="tabular-nums">{member.level}</span></span>
                             <span className="tabular-nums">{formatNumber(member.xp)} XP</span>

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getActiveVoiceSessions } from '@/lib/queries/server';
+import { supabase } from '@/lib/supabase';
 import { ActiveVoiceSession } from '@/types';
 import { Mic, Radio } from 'lucide-react';
 
@@ -32,31 +33,60 @@ export function VoiceActivity({ serverId }: VoiceActivityProps) {
   const [loading, setLoading] = useState(true);
   const [, setTick] = useState(0);
 
-  useEffect(() => {
-    async function loadSessions() {
-      try {
-        const data = await getActiveVoiceSessions(serverId);
-        setSessions(data);
-      } catch (err) {
-        console.error('Failed to load active voice sessions:', err);
-      } finally {
-        setLoading(false);
-      }
+  const loadSessions = useCallback(async () => {
+    try {
+      const data = await getActiveVoiceSessions(serverId);
+      setSessions(data);
+    } catch (err) {
+      console.error('Failed to load active voice sessions:', err);
+    } finally {
+      setLoading(false);
     }
+  }, [serverId]);
 
+  useEffect(() => {
+    // Initial load
     loadSessions();
 
-    // Refresh every 30 seconds
-    const refreshInterval = setInterval(loadSessions, 30000);
+    // Subscribe to realtime changes on voice_sessions table
+    const channel = supabase
+      .channel(`voice-activity-${serverId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'voice_sessions',
+          filter: `guild_id=eq.${serverId}`,
+        },
+        () => {
+          // New voice session started - reload to get member/channel info
+          loadSessions();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'voice_sessions',
+          filter: `guild_id=eq.${serverId}`,
+        },
+        () => {
+          // Voice session updated (likely left_at was set) - reload
+          loadSessions();
+        }
+      )
+      .subscribe();
 
     // Update durations every minute
     const tickInterval = setInterval(() => setTick((t) => t + 1), 60000);
 
     return () => {
-      clearInterval(refreshInterval);
+      supabase.removeChannel(channel);
       clearInterval(tickInterval);
     };
-  }, [serverId]);
+  }, [serverId, loadSessions]);
 
   if (loading) {
     return (
