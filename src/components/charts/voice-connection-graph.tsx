@@ -103,7 +103,8 @@ function getOrLoadImage(url: string | null, onLoad?: () => void): HTMLImageEleme
 export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<{ refresh: () => void } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphRef = useRef<any>(null);
   const [timeRange, setTimeRange] = useState<VoiceConnectionTimeRange>('30d');
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
