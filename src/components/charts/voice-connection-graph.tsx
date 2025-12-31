@@ -224,16 +224,18 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
   }, [serverId, timeRange]);
 
   // Handle node click - navigate to member profile
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleNodeClick = useCallback(
-    (node: VoiceGraphNode) => {
+    (node: any) => {
       router.push(`/${serverId}/${node.id}`);
     },
     [router, serverId]
   );
 
   // Custom node rendering
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintNode = useCallback(
-    (node: VoiceGraphNode & { val: number; x?: number; y?: number }, ctx: CanvasRenderingContext2D) => {
+    (node: any, ctx: CanvasRenderingContext2D) => {
       if (node.x === undefined || node.y === undefined) return;
 
       const size = node.val;
@@ -291,8 +293,9 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
   );
 
   // Custom pointer area for proper hover/click detection
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintNodePointerArea = useCallback(
-    (node: VoiceGraphNode & { val: number; x?: number; y?: number }, color: string, ctx: CanvasRenderingContext2D) => {
+    (node: any, color: string, ctx: CanvasRenderingContext2D) => {
       if (node.x === undefined || node.y === undefined) return;
 
       const size = node.val;
@@ -305,8 +308,9 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
   );
 
   // Custom link rendering
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintLink = useCallback(
-    (link: VoiceGraphEdge & { source: { x?: number; y?: number }; target: { x?: number; y?: number } }, ctx: CanvasRenderingContext2D) => {
+    (link: any, ctx: CanvasRenderingContext2D) => {
       const source = link.source;
       const target = link.target;
 
