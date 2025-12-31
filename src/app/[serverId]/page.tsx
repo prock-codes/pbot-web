@@ -158,7 +158,7 @@ export default async function ServerPage({ params }: ServerPageProps) {
                 No members with XP yet.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {membersResult.members.map((member, index) => {
                   const progress = getXpProgress(member.xp);
                   // Find the highest level role the member has achieved
@@ -170,12 +170,13 @@ export default async function ServerPage({ params }: ServerPageProps) {
                     <Link
                       key={member.user_id}
                       href={`/${serverId}/${member.user_id}`}
+                      className="block"
                     >
                       <div
-                        className={`flex items-center gap-4 p-3 rounded-lg hover:bg-discord-lighter/50 transition-colors group ${
-                          roleColor ? 'border-l-4' : ''
-                        }`}
-                        style={roleColor ? { borderLeftColor: roleColor } : undefined}
+                        className="flex items-center gap-4 p-3 rounded-lg transition-colors group"
+                        style={{
+                          backgroundColor: roleColor ? `${roleColor}15` : 'rgba(255,255,255,0.03)',
+                        }}
                       >
                         {/* Rank */}
                         <div className="w-8 text-center">
