@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { MemberWithLevel, DailyMemberStats, EmojiUsage, VoiceSession, VoiceStateChange } from '@/types';
+import { getLocalDateString } from '../utils';
 
 export async function getMemberProfile(
   guildId: string,
@@ -50,17 +51,50 @@ export async function getMemberDailyStats(
 ): Promise<DailyMemberStats[]> {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
+  const startDateStr = getLocalDateString(startDate);
 
   const { data, error } = await supabase
     .from('daily_member_stats')
     .select('*')
     .eq('guild_id', guildId)
     .eq('user_id', userId)
-    .gte('date', startDate.toISOString().split('T')[0])
+    .gte('date', startDateStr)
     .order('date', { ascending: true });
 
   if (error) throw error;
-  return data || [];
+
+  // Create a map of existing data
+  const dateMap = new Map<string, DailyMemberStats>();
+  (data || []).forEach((row) => {
+    dateMap.set(row.date, row);
+  });
+
+  // Fill in missing dates with zeros
+  const result: DailyMemberStats[] = [];
+  const currentDate = new Date(startDate);
+  const today = new Date();
+
+  while (currentDate <= today) {
+    const dateStr = getLocalDateString(currentDate);
+    const existing = dateMap.get(dateStr);
+    if (existing) {
+      result.push(existing);
+    } else {
+      result.push({
+        id: 0,
+        guild_id: guildId,
+        user_id: userId,
+        date: dateStr,
+        message_count: 0,
+        reaction_count: 0,
+        voice_minutes: 0,
+        xp_earned: 0,
+      });
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return result;
 }
 
 export async function getMemberTopEmojis(

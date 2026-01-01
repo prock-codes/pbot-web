@@ -21,7 +21,6 @@ import {
   Users,
   Calendar,
   Clock,
-  ChevronLeft,
   Award,
 } from 'lucide-react';
 
@@ -47,15 +46,6 @@ export default async function ServerPage({ params }: ServerPageProps) {
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Back Button */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors"
-      >
-        <ChevronLeft className="w-4 h-4" />
-        <span>All Servers</span>
-      </Link>
-
       {/* Server Header */}
       <div className="flex items-center gap-4 mb-8">
         <Avatar src={server.icon_url} alt={server.name} size="xl" />

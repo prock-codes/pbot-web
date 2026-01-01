@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { Guild, ServerStats, ActiveVoiceSession } from '@/types';
-import { getDayName, formatHour } from '../utils';
+import { getDayName, formatHour, getLocalDateString } from '../utils';
 
 export async function getAllServers(): Promise<Guild[]> {
   const { data, error } = await supabase
@@ -163,7 +163,7 @@ export async function getServerDailyActivity(
 ): Promise<DailyActivityStats[]> {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  const startDateStr = startDate.toISOString().split('T')[0];
+  const startDateStr = getLocalDateString(startDate);
 
   // Fetch daily member stats aggregated by date
   const { data, error } = await supabase
@@ -197,7 +197,7 @@ export async function getServerDailyActivity(
   const today = new Date();
 
   while (currentDate <= today) {
-    const dateStr = currentDate.toISOString().split('T')[0];
+    const dateStr = getLocalDateString(currentDate);
     const stats = dateMap.get(dateStr);
     result.push({
       date: dateStr,
