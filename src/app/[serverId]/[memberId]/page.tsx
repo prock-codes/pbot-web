@@ -23,8 +23,8 @@ import {
 } from '@/lib/queries/profile';
 import { getMemberRank } from '@/lib/queries/members';
 import { getServer } from '@/lib/queries/server';
-import { getTopFriends } from '@/lib/queries/voice-connections';
-import { MemberWithLevel, EmojiUsage, Guild, TopFriend } from '@/types';
+import { getCombinedTopFriends, getServerActivityWeight } from '@/lib/queries/text-connections';
+import { MemberWithLevel, EmojiUsage, Guild, CombinedFriend, ServerActivityWeight } from '@/types';
 import {
   MessageSquare,
   Mic,
@@ -43,19 +43,21 @@ export default function MemberProfilePage() {
   const [member, setMember] = useState<MemberWithLevel | null>(null);
   const [rank, setRank] = useState<number>(0);
   const [topEmojis, setTopEmojis] = useState<EmojiUsage[]>([]);
-  const [topFriends, setTopFriends] = useState<TopFriend[]>([]);
+  const [topFriends, setTopFriends] = useState<CombinedFriend[]>([]);
+  const [activityWeight, setActivityWeight] = useState<ServerActivityWeight | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [serverData, memberData, rankData, emojisData, friendsData] = await Promise.all([
+        const [serverData, memberData, rankData, emojisData, friendsData, weightData] = await Promise.all([
           getServer(serverId),
           getMemberProfile(serverId, memberId),
           getMemberRank(serverId, memberId),
           getMemberTopEmojis(serverId, memberId, 10),
-          getTopFriends(serverId, memberId, 5),
+          getCombinedTopFriends(serverId, memberId, 5),
+          getServerActivityWeight(serverId),
         ]);
 
         setServer(serverData);
@@ -63,6 +65,7 @@ export default function MemberProfilePage() {
         setRank(rankData);
         setTopEmojis(emojisData);
         setTopFriends(friendsData);
+        setActivityWeight(weightData);
       } catch (err) {
         setError('Failed to load member profile');
         console.error(err);
@@ -219,8 +222,13 @@ export default function MemberProfilePage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="w-5 h-5" />
-                Top Friends
+                Best Friends
               </CardTitle>
+              {activityWeight && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Server is {Math.round(activityWeight.voiceWeight * 100)}% voice, {Math.round(activityWeight.textWeight * 100)}% text
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -239,9 +247,20 @@ export default function MemberProfilePage() {
                         <p className="text-sm font-medium text-white truncate">
                           {friend.display_name || friend.username || 'Unknown'}
                         </p>
-                        <p className="text-xs text-gray-400">
-                          {formatDuration(friend.shared_seconds)} together
-                        </p>
+                        <div className="flex items-center gap-3 text-xs text-gray-400">
+                          {friend.voice_seconds > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Mic className="w-3 h-3" />
+                              {formatDuration(friend.voice_seconds)}
+                            </span>
+                          )}
+                          {friend.text_interaction_score > 0 && (
+                            <span className="flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3" />
+                              {friend.text_shared_channels} channel{friend.text_shared_channels !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </Link>

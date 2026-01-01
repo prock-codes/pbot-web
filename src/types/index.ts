@@ -178,3 +178,57 @@ export interface VoiceStateChange {
   event_type: VoiceStateEventType;
   created_at: string;
 }
+
+// Text Connection Types
+export type ConnectionTimeRange = '30d' | '90d' | 'all';
+
+export interface TextConnection {
+  user_id_1: string;
+  user_id_2: string;
+  shared_channel_count: number; // Number of channels both users are active in
+  interaction_score: number; // Weighted score based on temporal proximity
+  message_count: number; // Total messages in shared channels
+  username_1: string | null;
+  display_name_1: string | null;
+  avatar_url_1: string | null;
+  username_2: string | null;
+  display_name_2: string | null;
+  avatar_url_2: string | null;
+}
+
+export interface TextGraphNode {
+  id: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  totalConnections: number;
+  totalInteractionScore: number;
+}
+
+export interface TextGraphEdge {
+  source: string;
+  target: string;
+  interactionScore: number;
+  sharedChannelCount: number;
+}
+
+// Server Activity Weight (for balancing voice vs text in combined metrics)
+export interface ServerActivityWeight {
+  voiceWeight: number; // 0-1, how voice-heavy the server is
+  textWeight: number; // 0-1, how text-heavy the server is
+  totalVoiceMinutes: number;
+  totalMessages: number;
+}
+
+// Combined Friend (includes both voice and text connections)
+export interface CombinedFriend {
+  user_id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  voice_seconds: number;
+  voice_sessions: number;
+  text_interaction_score: number;
+  text_shared_channels: number;
+  combined_score: number; // Weighted combination of voice and text
+}
