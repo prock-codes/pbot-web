@@ -492,67 +492,87 @@ export async function getCombinedTopFriends(
   const weight = await getServerActivityWeight(guildId);
 
   // Get voice connections
-  const { data: voiceData } = await supabase
+  const { data: voiceData, error: voiceError } = await supabase
     .from('voice_connections')
     .select('*')
     .eq('guild_id', guildId)
     .eq('time_range', 'all')
     .or(`user_id_1.eq.${userId},user_id_2.eq.${userId}`);
 
-  // Get text connections
-  const { data: textData } = await supabase
-    .from('text_connections')
-    .select('*')
-    .eq('guild_id', guildId)
-    .eq('time_range', 'all')
-    .or(`user_id_1.eq.${userId},user_id_2.eq.${userId}`);
+  // Get text connections (gracefully handle if table doesn't exist)
+  let textData: Array<{
+    user_id_1: string;
+    user_id_2: string;
+    interaction_score: number;
+    shared_channel_count: number;
+  }> | null = null;
+
+  try {
+    const { data, error } = await supabase
+      .from('text_connections')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('time_range', 'all')
+      .or(`user_id_1.eq.${userId},user_id_2.eq.${userId}`);
+
+    if (!error) {
+      textData = data;
+    }
+  } catch {
+    // Table might not exist yet, continue without text data
+    console.warn('text_connections table not available');
+  }
 
   // Combine connections by friend ID
   const friendMap = new Map<string, CombinedFriend>();
 
   // Process voice connections
-  (voiceData || []).forEach((conn) => {
-    const isUser1 = conn.user_id_1 === userId;
-    const friendId = isUser1 ? conn.user_id_2 : conn.user_id_1;
+  if (!voiceError && voiceData) {
+    voiceData.forEach((conn) => {
+      const isUser1 = conn.user_id_1 === userId;
+      const friendId = isUser1 ? conn.user_id_2 : conn.user_id_1;
 
-    const existing = friendMap.get(friendId) || {
-      user_id: friendId,
-      username: null,
-      display_name: null,
-      avatar_url: null,
-      voice_seconds: 0,
-      voice_sessions: 0,
-      text_interaction_score: 0,
-      text_shared_channels: 0,
-      combined_score: 0,
-    };
+      const existing = friendMap.get(friendId) || {
+        user_id: friendId,
+        username: null,
+        display_name: null,
+        avatar_url: null,
+        voice_seconds: 0,
+        voice_sessions: 0,
+        text_interaction_score: 0,
+        text_shared_channels: 0,
+        combined_score: 0,
+      };
 
-    existing.voice_seconds = conn.shared_seconds;
-    existing.voice_sessions = conn.session_count;
-    friendMap.set(friendId, existing);
-  });
+      existing.voice_seconds = conn.shared_seconds;
+      existing.voice_sessions = conn.session_count;
+      friendMap.set(friendId, existing);
+    });
+  }
 
   // Process text connections
-  (textData || []).forEach((conn) => {
-    const isUser1 = conn.user_id_1 === userId;
-    const friendId = isUser1 ? conn.user_id_2 : conn.user_id_1;
+  if (textData) {
+    textData.forEach((conn) => {
+      const isUser1 = conn.user_id_1 === userId;
+      const friendId = isUser1 ? conn.user_id_2 : conn.user_id_1;
 
-    const existing = friendMap.get(friendId) || {
-      user_id: friendId,
-      username: null,
-      display_name: null,
-      avatar_url: null,
-      voice_seconds: 0,
-      voice_sessions: 0,
-      text_interaction_score: 0,
-      text_shared_channels: 0,
-      combined_score: 0,
-    };
+      const existing = friendMap.get(friendId) || {
+        user_id: friendId,
+        username: null,
+        display_name: null,
+        avatar_url: null,
+        voice_seconds: 0,
+        voice_sessions: 0,
+        text_interaction_score: 0,
+        text_shared_channels: 0,
+        combined_score: 0,
+      };
 
-    existing.text_interaction_score = conn.interaction_score;
-    existing.text_shared_channels = conn.shared_channel_count;
-    friendMap.set(friendId, existing);
-  });
+      existing.text_interaction_score = conn.interaction_score;
+      existing.text_shared_channels = conn.shared_channel_count;
+      friendMap.set(friendId, existing);
+    });
+  }
 
   // Fetch member info for all friends
   const friendIds = Array.from(friendMap.keys());
