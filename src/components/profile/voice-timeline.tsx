@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDuration, formatVoiceTime } from '@/lib/utils';
+import { formatDuration, formatVoiceTime, getLocalDateString } from '@/lib/utils';
 import {
   getMemberVoiceSessions,
   getMemberVoiceStateChanges,
@@ -242,7 +242,7 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
   const year = new Date().getFullYear();
   const startOfYear = new Date(year, 0, 1);
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = getLocalDateString(today);
 
   // Create a map for quick lookup
   const statsMap = new Map<string, number>();
@@ -284,7 +284,7 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
 
   // Fill in all days of the year
   while (currentDate.getFullYear() === year) {
-    const dateStr = currentDate.toISOString().split('T')[0];
+    const dateStr = getLocalDateString(currentDate);
     const minutes = statsMap.get(dateStr) || 0;
     const isFuture = currentDate > today;
     const isToday = dateStr === todayStr;
@@ -337,7 +337,7 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
   currentStreak = 0;
   const checkDate = new Date(today);
   while (true) {
-    const checkStr = checkDate.toISOString().split('T')[0];
+    const checkStr = getLocalDateString(checkDate);
     const mins = statsMap.get(checkStr) || 0;
     if (mins > 0) {
       currentStreak++;
