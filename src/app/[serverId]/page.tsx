@@ -7,8 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { ServerActivityChart } from '@/components/charts/server-activity-chart';
 import { CombinedConnectionGraph } from '@/components/charts/combined-connection-graph';
-import { VoiceConnectionGraph } from '@/components/charts/voice-connection-graph';
-import { TextConnectionGraph } from '@/components/charts/text-connection-graph';
 import { VoiceActivity } from '@/components/server/voice-activity';
 import {
   formatNumber,
@@ -132,19 +130,9 @@ export default async function ServerPage({ params }: ServerPageProps) {
         <ServerActivityChart serverId={serverId} />
       </div>
 
-      {/* Combined Social Web (Voice + Text) */}
+      {/* Social Web (Voice + Text with switcher) */}
       <div className="mb-8">
         <CombinedConnectionGraph serverId={serverId} />
-      </div>
-
-      {/* Voice Connection Graph */}
-      <div className="mb-8">
-        <VoiceConnectionGraph serverId={serverId} />
-      </div>
-
-      {/* Text Connection Graph */}
-      <div className="mb-8">
-        <TextConnectionGraph serverId={serverId} />
       </div>
 
       {/* Member Leaderboard with Level Roles */}

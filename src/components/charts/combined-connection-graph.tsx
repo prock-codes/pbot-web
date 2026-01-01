@@ -34,10 +34,24 @@ type TimeRangeOption = {
   label: string;
 };
 
+type ViewMode = 'combined' | 'voice' | 'text';
+
+type ViewModeOption = {
+  value: ViewMode;
+  label: string;
+  icon: React.ReactNode;
+};
+
 const TIME_RANGES: TimeRangeOption[] = [
   { value: '30d', label: '30 Days' },
   { value: '90d', label: '90 Days' },
   { value: 'all', label: 'All Time' },
+];
+
+const VIEW_MODES: ViewModeOption[] = [
+  { value: 'combined', label: 'All', icon: <Users className="w-3 h-3" /> },
+  { value: 'voice', label: 'Voice', icon: <Mic className="w-3 h-3" /> },
+  { value: 'text', label: 'Text', icon: <MessageSquare className="w-3 h-3" /> },
 ];
 
 interface CombinedNode {
@@ -137,14 +151,17 @@ export function CombinedConnectionGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('combined');
   const [timeRange, setTimeRange] = useState<ConnectionTimeRange>('30d');
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [fullGraphData, setFullGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
   const [calculatedAt, setCalculatedAt] = useState<Date | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
   const [hoveredNode, setHoveredNode] = useState<CombinedNode | null>(null);
   const [activityWeight, setActivityWeight] = useState<ServerActivityWeight | null>(null);
+  const [hasVoiceData, setHasVoiceData] = useState(false);
+  const [hasTextData, setHasTextData] = useState(false);
   const [, setImagesLoaded] = useState(0);
 
   const triggerRepaint = useCallback(() => {
@@ -153,6 +170,56 @@ export function CombinedConnectionGraph({
       graphRef.current.refresh();
     }
   }, []);
+
+  // Filter graph data based on view mode
+  const graphData = useCallback((): GraphData | null => {
+    if (!fullGraphData) return null;
+
+    if (viewMode === 'combined') {
+      return fullGraphData;
+    }
+
+    // Filter edges based on view mode
+    const filteredLinks = fullGraphData.links.filter((link) => {
+      if (viewMode === 'voice') {
+        return link.voiceSeconds > 0;
+      } else {
+        return link.textScore > 0;
+      }
+    });
+
+    // Get node IDs that are part of filtered edges
+    const nodeIds = new Set<string>();
+    filteredLinks.forEach((link) => {
+      const sourceId = typeof link.source === 'string' ? link.source : (link.source as CombinedNode).id;
+      const targetId = typeof link.target === 'string' ? link.target : (link.target as CombinedNode).id;
+      nodeIds.add(sourceId);
+      nodeIds.add(targetId);
+    });
+
+    // Filter nodes
+    const filteredNodes = fullGraphData.nodes.filter((node) => nodeIds.has(node.id));
+
+    // Recalculate node sizes based on filtered data
+    const recalculatedNodes = filteredNodes.map((node) => {
+      let score: number;
+      if (viewMode === 'voice') {
+        score = node.voiceScore;
+      } else {
+        score = node.textScore;
+      }
+      const maxScore = Math.max(...filteredNodes.map((n) => viewMode === 'voice' ? n.voiceScore : n.textScore), 1);
+      return {
+        ...node,
+        val: 3 + (score / maxScore) * 9,
+      };
+    });
+
+    return {
+      nodes: recalculatedNodes,
+      links: filteredLinks,
+    };
+  }, [fullGraphData, viewMode]);
 
   // Combine voice and text data into unified graph
   const buildCombinedGraph = useCallback(
@@ -165,7 +232,6 @@ export function CombinedConnectionGraph({
       voiceConnections.forEach((conn) => {
         const edgeKey = [conn.user_id_1, conn.user_id_2].sort().join(':');
 
-        // Update or create edge
         const existingEdge = edgeMap.get(edgeKey) || {
           source: conn.user_id_1,
           target: conn.user_id_2,
@@ -177,7 +243,6 @@ export function CombinedConnectionGraph({
         existingEdge.voiceSeconds = conn.shared_seconds;
         edgeMap.set(edgeKey, existingEdge);
 
-        // Update nodes
         [
           { id: conn.user_id_1, username: conn.username_1, displayName: conn.display_name_1, avatarUrl: conn.avatar_url_1 },
           { id: conn.user_id_2, username: conn.username_2, displayName: conn.display_name_2, avatarUrl: conn.avatar_url_2 },
@@ -192,7 +257,7 @@ export function CombinedConnectionGraph({
             combinedScore: 0,
             val: 5,
           };
-          existing.voiceScore += conn.shared_seconds / 60; // Convert to minutes
+          existing.voiceScore += conn.shared_seconds / 60;
           if (user.username) existing.username = user.username;
           if (user.displayName) existing.displayName = user.displayName;
           if (user.avatarUrl) existing.avatarUrl = user.avatarUrl;
@@ -204,7 +269,6 @@ export function CombinedConnectionGraph({
       textConnections.forEach((conn) => {
         const edgeKey = [conn.user_id_1, conn.user_id_2].sort().join(':');
 
-        // Update or create edge
         const existingEdge = edgeMap.get(edgeKey) || {
           source: conn.user_id_1,
           target: conn.user_id_2,
@@ -219,7 +283,6 @@ export function CombinedConnectionGraph({
         }
         edgeMap.set(edgeKey, existingEdge);
 
-        // Update nodes
         [
           { id: conn.user_id_1, username: conn.username_1, displayName: conn.display_name_1, avatarUrl: conn.avatar_url_1 },
           { id: conn.user_id_2, username: conn.username_2, displayName: conn.display_name_2, avatarUrl: conn.avatar_url_2 },
@@ -277,12 +340,9 @@ export function CombinedConnectionGraph({
   const handleRefresh = useCallback(async () => {
     setCalculating(true);
     try {
-      // Refresh both voice and text connections
       await Promise.all([
         calculateVoiceConnections(serverId, timeRange),
-        calculateTextConnections(serverId, timeRange).catch(() => {
-          // Text connections table might not exist
-        }),
+        calculateTextConnections(serverId, timeRange).catch(() => {}),
       ]);
 
       const [voiceConnections, weight] = await Promise.all([
@@ -293,13 +353,13 @@ export function CombinedConnectionGraph({
       let textConnections: unknown[] = [];
       try {
         textConnections = await getTextConnections(serverId, timeRange);
-      } catch {
-        // Text connections table might not exist
-      }
+      } catch {}
 
+      setHasVoiceData(voiceConnections.length > 0);
+      setHasTextData(textConnections.length > 0);
       setActivityWeight(weight);
       const combined = buildCombinedGraph(voiceConnections, textConnections, weight);
-      setGraphData(combined);
+      setFullGraphData(combined);
       setCalculatedAt(new Date());
 
       setTimeout(() => {
@@ -332,7 +392,7 @@ export function CombinedConnectionGraph({
       clearTimeout(timer);
       window.removeEventListener('resize', updateDimensions);
     };
-  }, [graphData]);
+  }, [fullGraphData]);
 
   // Load graph data
   useEffect(() => {
@@ -349,15 +409,15 @@ export function CombinedConnectionGraph({
         let textConnections: unknown[] = [];
         try {
           textConnections = await getTextConnections(serverId, timeRange);
-        } catch {
-          // Text connections table might not exist
-        }
+        } catch {}
 
         if (cancelled) return;
 
+        setHasVoiceData(voiceConnections.length > 0);
+        setHasTextData(textConnections.length > 0);
         setActivityWeight(weight);
         const combined = buildCombinedGraph(voiceConnections, textConnections, weight);
-        setGraphData(combined);
+        setFullGraphData(combined);
         setCalculatedAt(new Date());
 
         setTimeout(() => {
@@ -393,7 +453,7 @@ export function CombinedConnectionGraph({
     [router, serverId]
   );
 
-  // Custom node rendering with gradient border based on voice/text mix
+  // Custom node rendering
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D) => {
@@ -406,7 +466,6 @@ export function CombinedConnectionGraph({
 
       ctx.save();
 
-      // Create circular clipping path
       ctx.beginPath();
       ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
       ctx.closePath();
@@ -416,20 +475,26 @@ export function CombinedConnectionGraph({
         ctx.drawImage(img, node.x - size, node.y - size, size * 2, size * 2);
         ctx.restore();
 
-        // Draw border - color based on primary activity type
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
 
-        // Blend color based on voice vs text ratio
-        const totalScore = node.voiceScore + node.textScore;
-        const voiceRatio = totalScore > 0 ? node.voiceScore / totalScore : 0.5;
+        // Color based on view mode
+        let borderColor: string;
+        if (viewMode === 'voice') {
+          borderColor = '#7289DA'; // Purple for voice
+        } else if (viewMode === 'text') {
+          borderColor = '#43B581'; // Green for text
+        } else {
+          // Combined - blend based on ratio
+          const totalScore = node.voiceScore + node.textScore;
+          const voiceRatio = totalScore > 0 ? node.voiceScore / totalScore : 0.5;
+          const r = Math.round(88 * voiceRatio + 67 * (1 - voiceRatio));
+          const g = Math.round(101 * voiceRatio + 181 * (1 - voiceRatio));
+          const b = Math.round(242 * voiceRatio + 129 * (1 - voiceRatio));
+          borderColor = `rgb(${r}, ${g}, ${b})`;
+        }
 
-        // Interpolate between green (text) and purple (voice)
-        const r = Math.round(88 * voiceRatio + 67 * (1 - voiceRatio));
-        const g = Math.round(101 * voiceRatio + 181 * (1 - voiceRatio));
-        const b = Math.round(242 * voiceRatio + 129 * (1 - voiceRatio));
-
-        ctx.strokeStyle = isHovered ? '#FFFFFF' : `rgb(${r}, ${g}, ${b})`;
+        ctx.strokeStyle = isHovered ? '#FFFFFF' : borderColor;
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke();
       } else {
@@ -441,7 +506,7 @@ export function CombinedConnectionGraph({
         ctx.restore();
       }
     },
-    [hoveredNode, triggerRepaint]
+    [hoveredNode, triggerRepaint, viewMode]
   );
 
   // Custom pointer area
@@ -459,7 +524,7 @@ export function CombinedConnectionGraph({
     []
   );
 
-  // Custom link rendering - color based on connection type
+  // Custom link rendering
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
     const source = link.source;
@@ -479,27 +544,32 @@ export function CombinedConnectionGraph({
     ctx.moveTo(source.x, source.y);
     ctx.lineTo(target.x, target.y);
 
-    // Color based on connection type
     let color: string;
     const alpha = 0.2 + link.combinedStrength * 0.4;
 
-    if (link.primaryType === 'both') {
-      // Gradient-ish yellow/gold for both
-      color = `rgba(250, 200, 80, ${alpha})`;
-    } else if (link.primaryType === 'voice') {
-      // Purple for voice
-      color = `rgba(114, 137, 218, ${alpha})`;
+    if (viewMode === 'voice') {
+      color = `rgba(114, 137, 218, ${alpha})`; // Purple
+    } else if (viewMode === 'text') {
+      color = `rgba(67, 181, 129, ${alpha})`; // Green
     } else {
-      // Green for text
-      color = `rgba(67, 181, 129, ${alpha})`;
+      // Combined mode - color by type
+      if (link.primaryType === 'both') {
+        color = `rgba(250, 200, 80, ${alpha})`; // Gold
+      } else if (link.primaryType === 'voice') {
+        color = `rgba(114, 137, 218, ${alpha})`; // Purple
+      } else {
+        color = `rgba(67, 181, 129, ${alpha})`; // Green
+      }
     }
 
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
     ctx.stroke();
-  }, []);
+  }, [viewMode]);
 
-  if (loading && !graphData) {
+  const currentGraphData = graphData();
+
+  if (loading && !fullGraphData) {
     return (
       <Card>
         <CardHeader>
@@ -518,59 +588,93 @@ export function CombinedConnectionGraph({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Social Web
-              {calculating && (
-                <RefreshCw className="w-4 h-4 animate-spin text-gray-400" />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                Social Web
+                {calculating && (
+                  <RefreshCw className="w-4 h-4 animate-spin text-gray-400" />
+                )}
+              </CardTitle>
+              {viewMode === 'combined' && (
+                <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-[#7289DA]" />
+                    Voice
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-[#43B581]" />
+                    Text
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-[#FAC850]" />
+                    Both
+                  </span>
+                </div>
               )}
-            </CardTitle>
-            <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-[#7289DA]" />
-                <Mic className="w-3 h-3" /> Voice
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-[#43B581]" />
-                <MessageSquare className="w-3 h-3" /> Text
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-[#FAC850]" />
-                Both
-              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {TIME_RANGES.map((range) => (
+                <button
+                  key={range.value}
+                  onClick={() => setTimeRange(range.value)}
+                  disabled={calculating}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    timeRange === range.value
+                      ? 'bg-discord-blurple text-white'
+                      : 'bg-discord-darker text-gray-400 hover:text-white'
+                  } disabled:opacity-50`}
+                >
+                  {range.label}
+                </button>
+              ))}
+              <button
+                onClick={handleRefresh}
+                disabled={calculating}
+                className="px-3 py-1 text-sm rounded-md bg-discord-darker text-gray-400 hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1"
+                title="Refresh cache"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${calculating ? 'animate-spin' : ''}`}
+                />
+                <span className="hidden sm:inline">Refresh</span>
+              </button>
             </div>
           </div>
+
+          {/* View Mode Switcher */}
           <div className="flex items-center gap-2">
-            {TIME_RANGES.map((range) => (
-              <button
-                key={range.value}
-                onClick={() => setTimeRange(range.value)}
-                disabled={calculating}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  timeRange === range.value
-                    ? 'bg-discord-blurple text-white'
-                    : 'bg-discord-darker text-gray-400 hover:text-white'
-                } disabled:opacity-50`}
-              >
-                {range.label}
-              </button>
-            ))}
-            <button
-              onClick={handleRefresh}
-              disabled={calculating}
-              className="px-3 py-1 text-sm rounded-md bg-discord-darker text-gray-400 hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1"
-              title="Refresh cache"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${calculating ? 'animate-spin' : ''}`}
-              />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
+            <span className="text-xs text-gray-500 mr-2">Show:</span>
+            {VIEW_MODES.map((mode) => {
+              // Hide voice/text options if no data
+              if (mode.value === 'voice' && !hasVoiceData) return null;
+              if (mode.value === 'text' && !hasTextData) return null;
+
+              return (
+                <button
+                  key={mode.value}
+                  onClick={() => setViewMode(mode.value)}
+                  disabled={calculating}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+                    viewMode === mode.value
+                      ? mode.value === 'voice'
+                        ? 'bg-[#7289DA] text-white'
+                        : mode.value === 'text'
+                        ? 'bg-[#43B581] text-white'
+                        : 'bg-discord-blurple text-white'
+                      : 'bg-discord-darker text-gray-400 hover:text-white'
+                  } disabled:opacity-50`}
+                >
+                  {mode.icon}
+                  {mode.label}
+                </button>
+              );
+            })}
           </div>
         </div>
-        {calculatedAt && activityWeight && (
+        {calculatedAt && activityWeight && hasVoiceData && hasTextData && (
           <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             Server is {Math.round(activityWeight.voiceWeight * 100)}% voice, {Math.round(activityWeight.textWeight * 100)}% text
@@ -578,9 +682,9 @@ export function CombinedConnectionGraph({
         )}
       </CardHeader>
       <CardContent>
-        {!graphData || graphData.nodes.length === 0 ? (
+        {!currentGraphData || currentGraphData.nodes.length === 0 ? (
           <div className="w-full h-[500px] flex items-center justify-center text-gray-400">
-            <p>No connections found for this time period</p>
+            <p>No {viewMode === 'voice' ? 'voice ' : viewMode === 'text' ? 'text ' : ''}connections found for this time period</p>
           </div>
         ) : (
           <div
@@ -589,7 +693,7 @@ export function CombinedConnectionGraph({
           >
             <ForceGraph2D
               ref={graphRef}
-              graphData={graphData}
+              graphData={currentGraphData}
               width={dimensions.width}
               height={dimensions.height}
               backgroundColor="#1e1f22"
@@ -612,13 +716,13 @@ export function CombinedConnectionGraph({
                 <p className="font-medium text-white">
                   {hoveredNode.displayName || hoveredNode.username || 'Unknown'}
                 </p>
-                {hoveredNode.voiceScore > 0 && (
+                {(viewMode === 'combined' || viewMode === 'voice') && hoveredNode.voiceScore > 0 && (
                   <p className="text-sm text-gray-400 flex items-center gap-1">
                     <Mic className="w-3 h-3" />
                     {formatTime(hoveredNode.voiceScore * 60)} voice
                   </p>
                 )}
-                {hoveredNode.textScore > 0 && (
+                {(viewMode === 'combined' || viewMode === 'text') && hoveredNode.textScore > 0 && (
                   <p className="text-sm text-gray-400 flex items-center gap-1">
                     <MessageSquare className="w-3 h-3" />
                     {Math.round(hoveredNode.textScore)} interactions
@@ -629,7 +733,12 @@ export function CombinedConnectionGraph({
           </div>
         )}
         <p className="text-xs text-gray-500 mt-3 text-center">
-          Combined voice + text connections. Line color shows connection type. Click a node to view profile.
+          {viewMode === 'combined'
+            ? 'Combined voice + text connections. Line color shows connection type.'
+            : viewMode === 'voice'
+            ? 'Voice connections based on shared time in voice channels.'
+            : 'Text connections based on conversations in the same channels.'}
+          {' '}Click a node to view profile.
         </p>
       </CardContent>
     </Card>
