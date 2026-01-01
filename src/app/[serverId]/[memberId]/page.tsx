@@ -217,58 +217,63 @@ export default function MemberProfilePage() {
       {/* Top Friends and Top Emojis */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Top Friends */}
-        {topFriends.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                Best Friends
-              </CardTitle>
-              {activityWeight && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Server is {Math.round(activityWeight.voiceWeight * 100)}% voice, {Math.round(activityWeight.textWeight * 100)}% text
-                </p>
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {topFriends.map((friend) => (
-                  <Link
-                    key={friend.user_id}
-                    href={`/${serverId}/${friend.user_id}`}
-                  >
-                    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-discord-lighter/50 transition-colors">
-                      <Avatar
-                        src={friend.avatar_url}
-                        alt={friend.username || 'User'}
-                        size="sm"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {friend.display_name || friend.username || 'Unknown'}
-                        </p>
-                        <div className="flex items-center gap-3 text-xs text-gray-400">
-                          {friend.voice_seconds > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Mic className="w-3 h-3" />
-                              {formatDuration(friend.voice_seconds)}
-                            </span>
-                          )}
-                          {friend.text_interaction_score > 0 && (
-                            <span className="flex items-center gap-1">
-                              <MessageSquare className="w-3 h-3" />
-                              {friend.text_shared_channels} channel{friend.text_shared_channels !== 1 ? 's' : ''}
-                            </span>
-                          )}
+        {topFriends.length > 0 && (() => {
+          const hasAnyVoice = topFriends.some(f => f.voice_seconds > 0);
+          const hasAnyText = topFriends.some(f => f.text_interaction_score > 0);
+
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Best Friends
+                </CardTitle>
+                {activityWeight && hasAnyVoice && hasAnyText && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Server is {Math.round(activityWeight.voiceWeight * 100)}% voice, {Math.round(activityWeight.textWeight * 100)}% text
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {topFriends.map((friend) => (
+                    <Link
+                      key={friend.user_id}
+                      href={`/${serverId}/${friend.user_id}`}
+                    >
+                      <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-discord-lighter/50 transition-colors">
+                        <Avatar
+                          src={friend.avatar_url}
+                          alt={friend.username || 'User'}
+                          size="sm"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">
+                            {friend.display_name || friend.username || 'Unknown'}
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-gray-400">
+                            {hasAnyVoice && friend.voice_seconds > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Mic className="w-3 h-3" />
+                                {formatDuration(friend.voice_seconds)}
+                              </span>
+                            )}
+                            {hasAnyText && friend.text_interaction_score > 0 && (
+                              <span className="flex items-center gap-1">
+                                <MessageSquare className="w-3 h-3" />
+                                {friend.text_shared_channels} channel{friend.text_shared_channels !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Top Emojis */}
         {topEmojis.length > 0 && (
