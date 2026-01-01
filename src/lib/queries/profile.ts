@@ -97,6 +97,53 @@ export async function getMemberDailyStats(
   return result;
 }
 
+export interface YearlyVoiceDay {
+  date: string;
+  voice_minutes: number;
+}
+
+export async function getMemberYearlyVoiceStats(
+  guildId: string,
+  userId: string
+): Promise<YearlyVoiceDay[]> {
+  // Get Jan 1 of current year
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const startDateStr = getLocalDateString(startOfYear);
+
+  const { data, error } = await supabase
+    .from('daily_member_stats')
+    .select('date, voice_minutes')
+    .eq('guild_id', guildId)
+    .eq('user_id', userId)
+    .gte('date', startDateStr)
+    .order('date', { ascending: true });
+
+  if (error) throw error;
+
+  // Create a map of existing data
+  const dateMap = new Map<string, number>();
+  (data || []).forEach((row) => {
+    dateMap.set(row.date, row.voice_minutes || 0);
+  });
+
+  // Fill in all days from Jan 1 to today
+  const result: YearlyVoiceDay[] = [];
+  const currentDate = new Date(startOfYear);
+  const today = new Date();
+
+  while (currentDate <= today) {
+    const dateStr = getLocalDateString(currentDate);
+    result.push({
+      date: dateStr,
+      voice_minutes: dateMap.get(dateStr) || 0,
+    });
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return result;
+}
+
 export async function getMemberTopEmojis(
   guildId: string,
   userId: string,

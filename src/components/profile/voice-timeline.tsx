@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDuration } from '@/lib/utils';
-import { getMemberVoiceSessions, getMemberVoiceStateChanges } from '@/lib/queries/profile';
+import { formatDuration, formatVoiceTime } from '@/lib/utils';
+import {
+  getMemberVoiceSessions,
+  getMemberVoiceStateChanges,
+  getMemberYearlyVoiceStats,
+  YearlyVoiceDay,
+} from '@/lib/queries/profile';
 import { VoiceSession, VoiceStateChange, VoiceStateEventType } from '@/types';
 import {
   Mic,
@@ -15,6 +20,8 @@ import {
   Video,
   Clock,
   Hash,
+  Flame,
+  Calendar,
 } from 'lucide-react';
 
 interface VoiceTimelineProps {
@@ -26,13 +33,22 @@ interface SessionWithChanges extends VoiceSession {
   stateChanges: VoiceStateChange[];
 }
 
-// Colors for different states
+// Colors for different states in live session bar
 const STATE_COLORS = {
-  normal: '#3ba55c', // Green - normal voice
-  muted: '#faa61a', // Yellow/Orange - muted
-  deafened: '#ed4245', // Red - deafened
-  streaming: '#5865f2', // Blurple - streaming
-  video: '#9b59b6', // Purple - video
+  normal: '#3ba55c',
+  muted: '#faa61a',
+  deafened: '#ed4245',
+  streaming: '#5865f2',
+  video: '#9b59b6',
+};
+
+// Green color scale for contribution graph (GitHub-style)
+const GRAPH_COLORS = {
+  empty: '#161b22',
+  level1: '#0e4429',
+  level2: '#006d32',
+  level3: '#26a641',
+  level4: '#39d353',
 };
 
 function getEventIcon(eventType: VoiceStateEventType) {
@@ -90,7 +106,7 @@ function formatTime(dateString: string): string {
   });
 }
 
-function formatDate(dateString: string): string {
+function formatDateShort(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
     weekday: 'short',
@@ -111,7 +127,6 @@ function calculateTimelineSegments(
   stateChanges: VoiceStateChange[]
 ): TimelineSegment[] {
   const sessionStart = new Date(session.joined_at).getTime();
-  // For active sessions, use current time as end
   const sessionEnd = session.left_at ? new Date(session.left_at).getTime() : Date.now();
   const duration = sessionEnd - sessionStart;
 
@@ -143,11 +158,9 @@ function calculateTimelineSegments(
     return states.length > 0 ? states.join(', ') : 'Voice';
   };
 
-  // Process each state change
   for (const change of stateChanges) {
     const changeTime = new Date(change.created_at).getTime();
 
-    // Add segment for time before this change
     if (changeTime > lastTime) {
       const startPercent = ((lastTime - sessionStart) / duration) * 100;
       const widthPercent = ((changeTime - lastTime) / duration) * 100;
@@ -159,7 +172,6 @@ function calculateTimelineSegments(
       });
     }
 
-    // Update state
     switch (change.event_type) {
       case 'mute':
         currentState.muted = true;
@@ -190,7 +202,6 @@ function calculateTimelineSegments(
     lastTime = changeTime;
   }
 
-  // Add final segment
   if (lastTime < sessionEnd) {
     const startPercent = ((lastTime - sessionStart) / duration) * 100;
     const widthPercent = ((sessionEnd - lastTime) / duration) * 100;
@@ -202,7 +213,6 @@ function calculateTimelineSegments(
     });
   }
 
-  // If no state changes, just one segment
   if (segments.length === 0) {
     segments.push({
       startPercent: 0,
@@ -215,33 +225,172 @@ function calculateTimelineSegments(
   return segments;
 }
 
+// Get color for a day based on voice minutes relative to user's max
+function getDayColor(minutes: number, maxMinutes: number): string {
+  if (minutes === 0) return GRAPH_COLORS.empty;
+  if (maxMinutes === 0) return GRAPH_COLORS.empty;
+
+  const ratio = minutes / maxMinutes;
+  if (ratio <= 0.25) return GRAPH_COLORS.level1;
+  if (ratio <= 0.5) return GRAPH_COLORS.level2;
+  if (ratio <= 0.75) return GRAPH_COLORS.level3;
+  return GRAPH_COLORS.level4;
+}
+
+// Build contribution graph data structure
+function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
+  const year = new Date().getFullYear();
+  const startOfYear = new Date(year, 0, 1);
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Create a map for quick lookup
+  const statsMap = new Map<string, number>();
+  yearlyStats.forEach((day) => {
+    statsMap.set(day.date, day.voice_minutes);
+  });
+
+  // Find max minutes for color scaling
+  const maxMinutes = Math.max(...yearlyStats.map((d) => d.voice_minutes), 1);
+
+  // Calculate stats
+  let totalMinutes = 0;
+  let daysActive = 0;
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let tempStreak = 0;
+
+  // Build weeks array (53 weeks x 7 days)
+  const weeks: { date: Date; dateStr: string; minutes: number; isFuture: boolean; isToday: boolean }[][] = [];
+
+  // Start from the first day of the year
+  const currentDate = new Date(startOfYear);
+
+  // Pad to start on Sunday
+  const startDayOfWeek = currentDate.getDay();
+  let currentWeek: typeof weeks[0] = [];
+
+  // Add empty days before Jan 1 if needed
+  for (let i = 0; i < startDayOfWeek; i++) {
+    const padDate = new Date(year - 1, 11, 31 - (startDayOfWeek - 1 - i));
+    currentWeek.push({
+      date: padDate,
+      dateStr: '',
+      minutes: 0,
+      isFuture: false,
+      isToday: false,
+    });
+  }
+
+  // Fill in all days of the year
+  while (currentDate.getFullYear() === year) {
+    const dateStr = currentDate.toISOString().split('T')[0];
+    const minutes = statsMap.get(dateStr) || 0;
+    const isFuture = currentDate > today;
+    const isToday = dateStr === todayStr;
+
+    currentWeek.push({
+      date: new Date(currentDate),
+      dateStr,
+      minutes,
+      isFuture,
+      isToday,
+    });
+
+    // Track stats (only for past/today)
+    if (!isFuture) {
+      totalMinutes += minutes;
+      if (minutes > 0) {
+        daysActive++;
+        tempStreak++;
+        if (tempStreak > longestStreak) longestStreak = tempStreak;
+      } else {
+        tempStreak = 0;
+      }
+    }
+
+    // Start new week on Sunday
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  // Add remaining days of last week
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) {
+      currentWeek.push({
+        date: new Date(currentDate),
+        dateStr: '',
+        minutes: 0,
+        isFuture: true,
+        isToday: false,
+      });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    weeks.push(currentWeek);
+  }
+
+  // Calculate current streak (counting back from today)
+  currentStreak = 0;
+  const checkDate = new Date(today);
+  while (true) {
+    const checkStr = checkDate.toISOString().split('T')[0];
+    const mins = statsMap.get(checkStr) || 0;
+    if (mins > 0) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  return {
+    weeks,
+    maxMinutes,
+    totalMinutes,
+    daysActive,
+    currentStreak,
+    longestStreak,
+  };
+}
+
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
-  const [sessions, setSessions] = useState<SessionWithChanges[]>([]);
+  const [activeSession, setActiveSession] = useState<SessionWithChanges | null>(null);
+  const [yearlyStats, setYearlyStats] = useState<YearlyVoiceDay[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [hoveredDay, setHoveredDay] = useState<{ date: string; minutes: number; x: number; y: number } | null>(null);
 
   const loadData = useCallback(async (isInitialLoad = false) => {
     try {
-      const voiceSessions = await getMemberVoiceSessions(serverId, memberId, 10);
+      const [voiceSessions, yearly] = await Promise.all([
+        getMemberVoiceSessions(serverId, memberId, 1, true),
+        getMemberYearlyVoiceStats(serverId, memberId),
+      ]);
 
-      // Load state changes for each session
-      const sessionsWithChanges: SessionWithChanges[] = await Promise.all(
-        voiceSessions.map(async (session) => {
-          // For active sessions, use current time as end time for state changes query
-          const endTime = session.left_at || new Date().toISOString();
-          const stateChanges = await getMemberVoiceStateChanges(
-            serverId,
-            memberId,
-            session.joined_at,
-            endTime
-          );
-          return { ...session, stateChanges };
-        })
-      );
+      // Check for active session
+      const active = voiceSessions.find((s) => !s.left_at);
+      if (active) {
+        const endTime = new Date().toISOString();
+        const stateChanges = await getMemberVoiceStateChanges(
+          serverId,
+          memberId,
+          active.joined_at,
+          endTime
+        );
+        setActiveSession({ ...active, stateChanges });
+      } else {
+        setActiveSession(null);
+      }
 
-      setSessions(sessionsWithChanges);
+      setYearlyStats(yearly);
     } catch (err) {
-      console.error('Failed to load voice sessions:', err);
+      console.error('Failed to load voice data:', err);
     } finally {
       if (isInitialLoad) {
         setLoading(false);
@@ -249,22 +398,22 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
     }
   }, [serverId, memberId]);
 
-  // Initial load
   useEffect(() => {
     loadData(true);
   }, [loadData]);
 
-  // Auto-refresh every 15 seconds when there's an active session
+  // Auto-refresh when there's an active session
   useEffect(() => {
-    const hasActiveSession = sessions.some((s) => !s.left_at);
-    if (!hasActiveSession) return;
+    if (!activeSession) return;
 
     const interval = setInterval(() => {
       loadData(false);
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [sessions, loadData]);
+  }, [activeSession, loadData]);
+
+  const graphData = useMemo(() => buildGraphData(yearlyStats), [yearlyStats]);
 
   if (loading) {
     return (
@@ -277,166 +426,195 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
-            ))}
+            <Skeleton className="h-32 w-full" />
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  if (sessions.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mic className="w-5 h-5" />
-            Recent Voice Sessions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-gray-400 text-center py-4">
-            No voice sessions recorded yet.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
+  const year = new Date().getFullYear();
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Mic className="w-5 h-5" />
-          Recent Voice Sessions
+          Voice Activity
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {/* Legend */}
-        <div className="flex flex-wrap gap-3 mb-4 text-xs">
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: STATE_COLORS.normal }} />
-            <span className="text-gray-400">Voice</span>
+        {/* Active Session Bar */}
+        {activeSession && (
+          <div className="mb-6">
+            <div className="bg-discord-darker rounded-lg p-3 ring-2 ring-green-500/50">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <Hash className="w-4 h-4 text-gray-500" />
+                  <span className="text-white font-medium">
+                    {activeSession.channel_name || 'Unknown Channel'}
+                  </span>
+                  <span className="flex items-center gap-1 text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full animate-pulse">
+                    <span className="w-2 h-2 bg-green-500 rounded-full" />
+                    LIVE
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-gray-400">
+                  <Clock className="w-3 h-3" />
+                  {formatDuration(Math.floor((Date.now() - new Date(activeSession.joined_at).getTime()) / 1000))}
+                </div>
+              </div>
+
+              {/* Timeline bar */}
+              <div className="relative h-4 bg-discord-dark rounded-full overflow-hidden">
+                {calculateTimelineSegments(activeSession, activeSession.stateChanges).map((segment, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 bottom-0"
+                    style={{
+                      left: `${segment.startPercent}%`,
+                      width: `${segment.widthPercent}%`,
+                      backgroundColor: segment.color,
+                    }}
+                    title={segment.label}
+                  />
+                ))}
+              </div>
+
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>{formatTime(activeSession.joined_at)}</span>
+                <span>Now</span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: STATE_COLORS.muted }} />
-            <span className="text-gray-400">Muted</span>
+        )}
+
+        {/* Summary Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="bg-discord-darker rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-white">{formatVoiceTime(graphData.totalMinutes)}</div>
+            <div className="text-xs text-gray-400">Total Time</div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: STATE_COLORS.deafened }} />
-            <span className="text-gray-400">Deafened</span>
+          <div className="bg-discord-darker rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-white">{graphData.daysActive}</div>
+            <div className="text-xs text-gray-400">Days Active</div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: STATE_COLORS.streaming }} />
-            <span className="text-gray-400">Streaming</span>
+          <div className="bg-discord-darker rounded-lg p-3 text-center">
+            <div className="flex items-center justify-center gap-1">
+              <Flame className="w-4 h-4 text-orange-500" />
+              <span className="text-lg font-bold text-white">{graphData.currentStreak}</span>
+            </div>
+            <div className="text-xs text-gray-400">Current Streak</div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: STATE_COLORS.video }} />
-            <span className="text-gray-400">Video</span>
+          <div className="bg-discord-darker rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-white">{graphData.longestStreak}</div>
+            <div className="text-xs text-gray-400">Longest Streak</div>
           </div>
         </div>
 
-        <div className="space-y-3">
-          {sessions.map((session) => {
-            const segments = calculateTimelineSegments(session, session.stateChanges);
-            const isExpanded = expanded === session.id;
-            const isActive = !session.left_at;
-            // Calculate live duration for active sessions
-            const displayDuration = isActive
-              ? Math.floor((Date.now() - new Date(session.joined_at).getTime()) / 1000)
-              : (session.duration_seconds || 0);
-
-            return (
-              <div
-                key={session.id}
-                className={`bg-discord-darker rounded-lg p-3 cursor-pointer hover:bg-discord-lighter/30 transition-colors ${isActive ? 'ring-2 ring-green-500/50' : ''}`}
-                onClick={() => setExpanded(isExpanded ? null : session.id)}
-              >
-                {/* Session header */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Hash className="w-4 h-4 text-gray-500" />
-                    <span className="text-white font-medium">
-                      {session.channel_name || 'Unknown Channel'}
-                    </span>
-                    {isActive && (
-                      <span className="flex items-center gap-1 text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full animate-pulse">
-                        <span className="w-2 h-2 bg-green-500 rounded-full" />
-                        LIVE
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-gray-400">
-                    <span>{formatDate(session.joined_at)}</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDuration(displayDuration)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Timeline bar */}
-                <div className="relative h-4 bg-discord-dark rounded-full overflow-hidden">
-                  {segments.map((segment, i) => (
-                    <div
-                      key={i}
-                      className="absolute top-0 bottom-0 transition-all"
-                      style={{
-                        left: `${segment.startPercent}%`,
-                        width: `${segment.widthPercent}%`,
-                        backgroundColor: segment.color,
-                      }}
-                      title={segment.label}
-                    />
-                  ))}
-                </div>
-
-                {/* Time labels */}
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>{formatTime(session.joined_at)}</span>
-                  <span>{isActive ? 'Now' : formatTime(session.left_at!)}</span>
-                </div>
-
-                {/* Expanded state changes */}
-                {isExpanded && session.stateChanges.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-discord-dark">
-                    <p className="text-xs text-gray-500 mb-2">State changes:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {session.stateChanges.map((change) => (
-                        <div
-                          key={change.id}
-                          className="flex items-center gap-1 bg-discord-dark px-2 py-1 rounded text-xs"
-                        >
-                          {getEventIcon(change.event_type)}
-                          <span className="text-gray-300">{getEventLabel(change.event_type)}</span>
-                          <span className="text-gray-500">{formatTime(change.created_at)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Badges for streaming/video */}
-                {(session.was_streaming || session.was_video) && (
-                  <div className="flex gap-2 mt-2">
-                    {session.was_streaming && (
-                      <span className="flex items-center gap-1 text-xs bg-discord-blurple/20 text-discord-blurple px-2 py-0.5 rounded">
-                        <MonitorPlay className="w-3 h-3" />
-                        Streamed
-                      </span>
-                    )}
-                    {session.was_video && (
-                      <span className="flex items-center gap-1 text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">
-                        <Video className="w-3 h-3" />
-                        Video
-                      </span>
-                    )}
-                  </div>
-                )}
+        {/* Contribution Graph */}
+        <div className="relative">
+          {/* Month labels */}
+          <div className="flex mb-1 ml-8 text-xs text-gray-500">
+            {MONTH_LABELS.map((month, i) => (
+              <div key={month} style={{ width: `${100 / 12}%` }} className="text-left">
+                {month}
               </div>
-            );
-          })}
+            ))}
+          </div>
+
+          <div className="flex">
+            {/* Day labels */}
+            <div className="flex flex-col justify-around text-xs text-gray-500 pr-2 w-8">
+              {DAY_LABELS.filter((_, i) => i % 2 === 1).map((day) => (
+                <div key={day} className="h-3 leading-3">{day}</div>
+              ))}
+            </div>
+
+            {/* Graph grid */}
+            <div className="flex-1 overflow-x-auto">
+              <div className="flex gap-[3px]" style={{ minWidth: 'max-content' }}>
+                {graphData.weeks.map((week, weekIndex) => (
+                  <div key={weekIndex} className="flex flex-col gap-[3px]">
+                    {week.map((day, dayIndex) => {
+                      if (!day.dateStr) {
+                        return <div key={dayIndex} className="w-3 h-3" />;
+                      }
+
+                      const color = day.isFuture
+                        ? GRAPH_COLORS.empty
+                        : getDayColor(day.minutes, graphData.maxMinutes);
+
+                      return (
+                        <div
+                          key={dayIndex}
+                          className={`w-3 h-3 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-white/50 ${
+                            day.isToday ? 'ring-2 ring-white/70' : ''
+                          }`}
+                          style={{ backgroundColor: color, opacity: day.isFuture ? 0.3 : 1 }}
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setHoveredDay({
+                              date: day.dateStr,
+                              minutes: day.minutes,
+                              x: rect.left + rect.width / 2,
+                              y: rect.top,
+                            });
+                          }}
+                          onMouseLeave={() => setHoveredDay(null)}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center justify-end gap-2 mt-3 text-xs text-gray-500">
+            <span>Less</span>
+            <div className="flex gap-1">
+              {Object.values(GRAPH_COLORS).map((color, i) => (
+                <div
+                  key={i}
+                  className="w-3 h-3 rounded-sm"
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+            <span>More</span>
+          </div>
+
+          {/* Tooltip */}
+          {hoveredDay && (
+            <div
+              className="fixed z-50 bg-discord-darker border border-discord-lighter rounded-lg px-3 py-2 text-sm shadow-lg pointer-events-none"
+              style={{
+                left: hoveredDay.x,
+                top: hoveredDay.y - 50,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              <div className="font-medium text-white">
+                {formatVoiceTime(hoveredDay.minutes)} voice time
+              </div>
+              <div className="text-gray-400 text-xs">
+                {new Date(hoveredDay.date).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Year label */}
+        <div className="flex items-center justify-center gap-2 mt-4 text-sm text-gray-400">
+          <Calendar className="w-4 h-4" />
+          <span>{year} Voice Activity</span>
         </div>
       </CardContent>
     </Card>
