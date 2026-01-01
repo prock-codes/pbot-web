@@ -6,6 +6,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { ServerActivityChart } from '@/components/charts/server-activity-chart';
+import { CombinedConnectionGraph } from '@/components/charts/combined-connection-graph';
 import { VoiceConnectionGraph } from '@/components/charts/voice-connection-graph';
 import { TextConnectionGraph } from '@/components/charts/text-connection-graph';
 import { VoiceActivity } from '@/components/server/voice-activity';
@@ -129,6 +130,11 @@ export default async function ServerPage({ params }: ServerPageProps) {
       {/* Activity Chart */}
       <div className="mb-8">
         <ServerActivityChart serverId={serverId} />
+      </div>
+
+      {/* Combined Social Web (Voice + Text) */}
+      <div className="mb-8">
+        <CombinedConnectionGraph serverId={serverId} />
       </div>
 
       {/* Voice Connection Graph */}
