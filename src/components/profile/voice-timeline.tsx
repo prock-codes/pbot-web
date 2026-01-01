@@ -238,10 +238,9 @@ function getDayColor(minutes: number, maxMinutes: number): string {
 }
 
 // Build contribution graph data structure
-function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
-  const year = new Date().getFullYear();
+function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
+  const year = today.getFullYear();
   const startOfYear = new Date(year, 0, 1);
-  const today = new Date();
   const todayStr = getLocalDateString(today);
 
   // Create a map for quick lookup
@@ -286,8 +285,8 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
   while (currentDate.getFullYear() === year) {
     const dateStr = getLocalDateString(currentDate);
     const minutes = statsMap.get(dateStr) || 0;
-    const isFuture = currentDate > today;
     const isToday = dateStr === todayStr;
+    const isFuture = dateStr > todayStr;
 
     currentWeek.push({
       date: new Date(currentDate),
@@ -335,13 +334,13 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[]) {
 
   // Calculate current streak (counting back from today)
   currentStreak = 0;
-  const checkDate = new Date(today);
+  const checkDateForStreak = new Date(today);
   while (true) {
-    const checkStr = getLocalDateString(checkDate);
+    const checkStr = getLocalDateString(checkDateForStreak);
     const mins = statsMap.get(checkStr) || 0;
     if (mins > 0) {
       currentStreak++;
-      checkDate.setDate(checkDate.getDate() - 1);
+      checkDateForStreak.setDate(checkDateForStreak.getDate() - 1);
     } else {
       break;
     }
@@ -365,6 +364,12 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
   const [yearlyStats, setYearlyStats] = useState<YearlyVoiceDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredDay, setHoveredDay] = useState<{ date: string; minutes: number; x: number; y: number } | null>(null);
+  const [clientDate, setClientDate] = useState<Date | null>(null);
+
+  // Set the date on client side to avoid hydration mismatch
+  useEffect(() => {
+    setClientDate(new Date());
+  }, []);
 
   const loadData = useCallback(async (isInitialLoad = false) => {
     try {
@@ -413,9 +418,22 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
     return () => clearInterval(interval);
   }, [activeSession, loadData]);
 
-  const graphData = useMemo(() => buildGraphData(yearlyStats), [yearlyStats]);
+  const graphData = useMemo(() => {
+    // Use client date if available, otherwise return empty data
+    if (!clientDate) {
+      return {
+        weeks: [],
+        maxMinutes: 0,
+        totalMinutes: 0,
+        daysActive: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+      };
+    }
+    return buildGraphData(yearlyStats, clientDate);
+  }, [yearlyStats, clientDate]);
 
-  if (loading) {
+  if (loading || !clientDate) {
     return (
       <Card>
         <CardHeader>
@@ -433,7 +451,7 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
     );
   }
 
-  const year = new Date().getFullYear();
+  const year = clientDate.getFullYear();
 
   return (
     <Card>
@@ -600,12 +618,17 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
                 {formatVoiceTime(hoveredDay.minutes)} voice time
               </div>
               <div className="text-gray-400 text-xs">
-                {new Date(hoveredDay.date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
+                {(() => {
+                  // Parse date string directly to avoid timezone issues
+                  const [year, month, day] = hoveredDay.date.split('-').map(Number);
+                  const date = new Date(year, month - 1, day);
+                  return date.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  });
+                })()}
               </div>
             </div>
           )}

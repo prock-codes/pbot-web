@@ -282,11 +282,11 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
       // Draw label if node is large enough or hovered
       if (size > 6 || isHovered) {
         const label = node.displayName || node.username || 'Unknown';
-        ctx.font = `${isHovered ? 'bold ' : ''}10px sans-serif`;
+        ctx.font = `${isHovered ? 'bold ' : ''}8px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(label, node.x, node.y + size + 8);
+        ctx.fillText(label, node.x, node.y + size + 6);
       }
     },
     [hoveredNode, triggerRepaint]
