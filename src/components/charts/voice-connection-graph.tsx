@@ -112,7 +112,6 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
   const [calculatedAt, setCalculatedAt] = useState<Date | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
   const [hoveredNode, setHoveredNode] = useState<VoiceGraphNode | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [, setImagesLoaded] = useState(0); // Trigger re-render when images load
 
   // Force graph to repaint when images load
@@ -144,7 +143,6 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
         links: edges,
       });
       setCalculatedAt(new Date());
-      setRefreshKey((k) => k + 1);
 
       // Trigger repaint after a short delay to ensure images render
       setTimeout(() => {
@@ -183,6 +181,8 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
 
   // Load graph data
   useEffect(() => {
+    let cancelled = false;
+
     async function loadData() {
       setLoading(true);
       try {
@@ -190,6 +190,9 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
           serverId,
           timeRange
         );
+
+        // Prevent stale data from overwriting fresh data if time range changed
+        if (cancelled) return;
 
         if (isStale) {
           setCalculating(true);
@@ -210,17 +213,27 @@ export function VoiceConnectionGraph({ serverId }: VoiceConnectionGraphProps) {
 
         // Trigger repaint after a short delay to ensure images render
         setTimeout(() => {
-          setImagesLoaded((n) => n + 1);
+          if (!cancelled) {
+            setImagesLoaded((n) => n + 1);
+          }
         }, 100);
       } catch (err) {
-        console.error('Failed to load voice connections:', err);
+        if (!cancelled) {
+          console.error('Failed to load voice connections:', err);
+        }
       } finally {
-        setLoading(false);
-        setCalculating(false);
+        if (!cancelled) {
+          setLoading(false);
+          setCalculating(false);
+        }
       }
     }
 
     loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [serverId, timeRange]);
 
   // Handle node click - navigate to member profile
