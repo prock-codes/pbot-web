@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -63,11 +63,14 @@ interface CombinedNode {
   textScore: number;
   combinedScore: number;
   val: number;
+  // Position fields added by force-graph (optional, may not exist initially)
+  x?: number;
+  y?: number;
 }
 
 interface CombinedEdge {
-  source: string;
-  target: string;
+  source: string | CombinedNode;
+  target: string | CombinedNode;
   voiceSeconds: number;
   textScore: number;
   combinedStrength: number;
@@ -89,7 +92,7 @@ function formatTime(seconds: number): string {
   return `${minutes}m`;
 }
 
-// Image cache for avatars
+// Image cache for avatars (module-level singleton)
 const imageCache = new Map<string, HTMLImageElement>();
 const loadingCallbacks = new Map<string, Set<() => void>>();
 const DEFAULT_AVATAR = 'https://cdn.discordapp.com/embed/avatars/0.png';
@@ -144,6 +147,11 @@ function getOrLoadImage(
   return null;
 }
 
+// Helper to get node ID from source/target (which may be string or object after simulation)
+function getNodeId(nodeOrId: string | CombinedNode): string {
+  return typeof nodeOrId === 'string' ? nodeOrId : nodeOrId.id;
+}
+
 export function CombinedConnectionGraph({
   serverId,
 }: CombinedConnectionGraphProps) {
@@ -171,12 +179,23 @@ export function CombinedConnectionGraph({
     }
   }, []);
 
-  // Filter graph data based on view mode
-  const graphData = useCallback((): GraphData | null => {
+  // Memoized filtered graph data based on view mode
+  // Key fix: Create fresh objects for each view mode to avoid position conflicts
+  const currentGraphData = useMemo((): GraphData | null => {
     if (!fullGraphData) return null;
 
     if (viewMode === 'combined') {
-      return fullGraphData;
+      // For combined view, return fresh copies to ensure clean state
+      const nodes = fullGraphData.nodes.map(node => ({
+        ...node,
+        // Don't copy x/y - let simulation calculate fresh positions
+      }));
+      const links = fullGraphData.links.map(link => ({
+        ...link,
+        source: getNodeId(link.source),
+        target: getNodeId(link.target),
+      }));
+      return { nodes, links };
     }
 
     // Filter edges based on view mode
@@ -191,35 +210,60 @@ export function CombinedConnectionGraph({
     // Get node IDs that are part of filtered edges
     const nodeIds = new Set<string>();
     filteredLinks.forEach((link) => {
-      const sourceId = typeof link.source === 'string' ? link.source : (link.source as CombinedNode).id;
-      const targetId = typeof link.target === 'string' ? link.target : (link.target as CombinedNode).id;
-      nodeIds.add(sourceId);
-      nodeIds.add(targetId);
+      nodeIds.add(getNodeId(link.source));
+      nodeIds.add(getNodeId(link.target));
     });
 
-    // Filter nodes
+    // Filter and recalculate nodes
     const filteredNodes = fullGraphData.nodes.filter((node) => nodeIds.has(node.id));
 
     // Recalculate node sizes based on filtered data
-    const recalculatedNodes = filteredNodes.map((node) => {
-      let score: number;
-      if (viewMode === 'voice') {
-        score = node.voiceScore;
-      } else {
-        score = node.textScore;
-      }
-      const maxScore = Math.max(...filteredNodes.map((n) => viewMode === 'voice' ? n.voiceScore : n.textScore), 1);
+    const maxScore = Math.max(
+      ...filteredNodes.map((n) => (viewMode === 'voice' ? n.voiceScore : n.textScore)),
+      1
+    );
+
+    const recalculatedNodes: CombinedNode[] = filteredNodes.map((node) => {
+      const score = viewMode === 'voice' ? node.voiceScore : node.textScore;
       return {
-        ...node,
+        id: node.id,
+        username: node.username,
+        displayName: node.displayName,
+        avatarUrl: node.avatarUrl,
+        voiceScore: node.voiceScore,
+        textScore: node.textScore,
+        combinedScore: node.combinedScore,
         val: 3 + (score / maxScore) * 9,
+        // Don't copy x/y - let simulation calculate fresh positions
       };
     });
 
+    // Create fresh link objects with string IDs
+    const recalculatedLinks: CombinedEdge[] = filteredLinks.map((link) => ({
+      source: getNodeId(link.source),
+      target: getNodeId(link.target),
+      voiceSeconds: link.voiceSeconds,
+      textScore: link.textScore,
+      combinedStrength: link.combinedStrength,
+      primaryType: link.primaryType,
+    }));
+
     return {
       nodes: recalculatedNodes,
-      links: filteredLinks,
+      links: recalculatedLinks,
     };
   }, [fullGraphData, viewMode]);
+
+  // Reheat simulation when view mode changes
+  useEffect(() => {
+    if (graphRef.current && currentGraphData && currentGraphData.nodes.length > 0) {
+      // Small delay to ensure graph has updated
+      const timer = setTimeout(() => {
+        graphRef.current?.d3ReheatSimulation?.();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [viewMode, currentGraphData]);
 
   // Combine voice and text data into unified graph
   const buildCombinedGraph = useCallback(
@@ -322,8 +366,8 @@ export function CombinedConnectionGraph({
       const maxEdgeText = Math.max(...Array.from(edgeMap.values()).map((e) => e.textScore), 1);
 
       edgeMap.forEach((edge) => {
-        const normalizedVoice = (edge.voiceSeconds / maxEdgeVoice);
-        const normalizedText = (edge.textScore / maxEdgeText);
+        const normalizedVoice = edge.voiceSeconds / maxEdgeVoice;
+        const normalizedText = edge.textScore / maxEdgeText;
         edge.combinedStrength =
           normalizedVoice * weight.voiceWeight + normalizedText * weight.textWeight;
       });
@@ -445,8 +489,8 @@ export function CombinedConnectionGraph({
   }, [serverId, timeRange, buildCombinedGraph]);
 
   // Handle node click
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleNodeClick = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (node: any) => {
       router.push(`/${serverId}/${node.id}`);
     },
@@ -454,12 +498,12 @@ export function CombinedConnectionGraph({
   );
 
   // Custom node rendering
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintNode = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (node: any, ctx: CanvasRenderingContext2D) => {
       if (node.x === undefined || node.y === undefined) return;
 
-      const size = node.val;
+      const size = node.val || 5;
       const isHovered = hoveredNode?.id === node.id;
 
       const img = getOrLoadImage(node.avatarUrl, triggerRepaint);
@@ -486,8 +530,10 @@ export function CombinedConnectionGraph({
           borderColor = '#43B581'; // Green for text
         } else {
           // Combined - blend based on ratio
-          const totalScore = node.voiceScore + node.textScore;
-          const voiceRatio = totalScore > 0 ? node.voiceScore / totalScore : 0.5;
+          const voiceScore = node.voiceScore || 0;
+          const textScore = node.textScore || 0;
+          const totalScore = voiceScore + textScore;
+          const voiceRatio = totalScore > 0 ? voiceScore / totalScore : 0.5;
           const r = Math.round(88 * voiceRatio + 67 * (1 - voiceRatio));
           const g = Math.round(101 * voiceRatio + 181 * (1 - voiceRatio));
           const b = Math.round(242 * voiceRatio + 129 * (1 - voiceRatio));
@@ -510,12 +556,12 @@ export function CombinedConnectionGraph({
   );
 
   // Custom pointer area
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paintNodePointerArea = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (node: any, color: string, ctx: CanvasRenderingContext2D) => {
       if (node.x === undefined || node.y === undefined) return;
 
-      const size = node.val;
+      const size = node.val || 5;
       ctx.beginPath();
       ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
       ctx.fillStyle = color;
@@ -525,49 +571,55 @@ export function CombinedConnectionGraph({
   );
 
   // Custom link rendering
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
-    const source = link.source;
-    const target = link.target;
+  const paintLink = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (link: any, ctx: CanvasRenderingContext2D) => {
+      const source = link.source;
+      const target = link.target;
 
-    if (
-      source.x === undefined ||
-      source.y === undefined ||
-      target.x === undefined ||
-      target.y === undefined
-    )
-      return;
-
-    const lineWidth = 0.5 + link.combinedStrength * 4;
-
-    ctx.beginPath();
-    ctx.moveTo(source.x, source.y);
-    ctx.lineTo(target.x, target.y);
-
-    let color: string;
-    const alpha = 0.2 + link.combinedStrength * 0.4;
-
-    if (viewMode === 'voice') {
-      color = `rgba(114, 137, 218, ${alpha})`; // Purple
-    } else if (viewMode === 'text') {
-      color = `rgba(67, 181, 129, ${alpha})`; // Green
-    } else {
-      // Combined mode - color by type
-      if (link.primaryType === 'both') {
-        color = `rgba(250, 200, 80, ${alpha})`; // Gold
-      } else if (link.primaryType === 'voice') {
-        color = `rgba(114, 137, 218, ${alpha})`; // Purple
-      } else {
-        color = `rgba(67, 181, 129, ${alpha})`; // Green
+      // Check for valid positions
+      if (
+        typeof source !== 'object' ||
+        typeof target !== 'object' ||
+        source.x === undefined ||
+        source.y === undefined ||
+        target.x === undefined ||
+        target.y === undefined
+      ) {
+        return;
       }
-    }
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-  }, [viewMode]);
+      const strength = link.combinedStrength || 0.5;
+      const lineWidth = 0.5 + strength * 4;
 
-  const currentGraphData = graphData();
+      ctx.beginPath();
+      ctx.moveTo(source.x, source.y);
+      ctx.lineTo(target.x, target.y);
+
+      let color: string;
+      const alpha = 0.2 + strength * 0.4;
+
+      if (viewMode === 'voice') {
+        color = `rgba(114, 137, 218, ${alpha})`; // Purple
+      } else if (viewMode === 'text') {
+        color = `rgba(67, 181, 129, ${alpha})`; // Green
+      } else {
+        // Combined mode - color by type
+        if (link.primaryType === 'both') {
+          color = `rgba(250, 200, 80, ${alpha})`; // Gold
+        } else if (link.primaryType === 'voice') {
+          color = `rgba(114, 137, 218, ${alpha})`; // Purple
+        } else {
+          color = `rgba(67, 181, 129, ${alpha})`; // Green
+        }
+      }
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    },
+    [viewMode]
+  );
 
   if (loading && !fullGraphData) {
     return (
@@ -677,14 +729,23 @@ export function CombinedConnectionGraph({
         {calculatedAt && activityWeight && hasVoiceData && hasTextData && (
           <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            Server is {Math.round(activityWeight.voiceWeight * 100)}% voice, {Math.round(activityWeight.textWeight * 100)}% text
+            Server is {Math.round(activityWeight.voiceWeight * 100)}% voice,{' '}
+            {Math.round(activityWeight.textWeight * 100)}% text
           </p>
         )}
       </CardHeader>
       <CardContent>
         {!currentGraphData || currentGraphData.nodes.length === 0 ? (
           <div className="w-full h-[500px] flex items-center justify-center text-gray-400">
-            <p>No {viewMode === 'voice' ? 'voice ' : viewMode === 'text' ? 'text ' : ''}connections found for this time period</p>
+            <p>
+              No{' '}
+              {viewMode === 'voice'
+                ? 'voice '
+                : viewMode === 'text'
+                ? 'text '
+                : ''}
+              connections found for this time period
+            </p>
           </div>
         ) : (
           <div
@@ -692,11 +753,13 @@ export function CombinedConnectionGraph({
             className="relative w-full h-[500px] bg-discord-darker rounded-lg overflow-hidden"
           >
             <ForceGraph2D
+              key={viewMode} // Force remount on view change for clean simulation
               ref={graphRef}
               graphData={currentGraphData}
               width={dimensions.width}
               height={dimensions.height}
               backgroundColor="#1e1f22"
+              nodeId="id"
               nodeRelSize={1}
               nodeCanvasObject={paintNode}
               nodePointerAreaPaint={paintNodePointerArea}
@@ -716,18 +779,20 @@ export function CombinedConnectionGraph({
                 <p className="font-medium text-white">
                   {hoveredNode.displayName || hoveredNode.username || 'Unknown'}
                 </p>
-                {(viewMode === 'combined' || viewMode === 'voice') && hoveredNode.voiceScore > 0 && (
-                  <p className="text-sm text-gray-400 flex items-center gap-1">
-                    <Mic className="w-3 h-3" />
-                    {formatTime(hoveredNode.voiceScore * 60)} voice
-                  </p>
-                )}
-                {(viewMode === 'combined' || viewMode === 'text') && hoveredNode.textScore > 0 && (
-                  <p className="text-sm text-gray-400 flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3" />
-                    {Math.round(hoveredNode.textScore)} interactions
-                  </p>
-                )}
+                {(viewMode === 'combined' || viewMode === 'voice') &&
+                  hoveredNode.voiceScore > 0 && (
+                    <p className="text-sm text-gray-400 flex items-center gap-1">
+                      <Mic className="w-3 h-3" />
+                      {formatTime(hoveredNode.voiceScore * 60)} voice
+                    </p>
+                  )}
+                {(viewMode === 'combined' || viewMode === 'text') &&
+                  hoveredNode.textScore > 0 && (
+                    <p className="text-sm text-gray-400 flex items-center gap-1">
+                      <MessageSquare className="w-3 h-3" />
+                      {Math.round(hoveredNode.textScore)} interactions
+                    </p>
+                  )}
               </div>
             )}
           </div>
@@ -737,8 +802,8 @@ export function CombinedConnectionGraph({
             ? 'Combined voice + text connections. Line color shows connection type.'
             : viewMode === 'voice'
             ? 'Voice connections based on shared time in voice channels.'
-            : 'Text connections based on conversations in the same channels.'}
-          {' '}Click a node to view profile.
+            : 'Text connections based on conversations in the same channels.'}{' '}
+          Click a node to view profile.
         </p>
       </CardContent>
     </Card>
