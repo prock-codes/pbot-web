@@ -108,12 +108,13 @@ export async function getServerStats(guildId: string): Promise<ServerStats> {
     }
   }
 
-  // Calculate peak hour
+  // Calculate peak hour (in UTC for consistent server-side calculation)
   let peakHour: number | null = null;
   if (peakHourResult.data && peakHourResult.data.length > 0) {
     const hourCounts: Record<number, number> = {};
     peakHourResult.data.forEach((msg) => {
-      const hour = new Date(msg.created_at).getHours();
+      // Use UTC hours for consistent calculation regardless of server timezone
+      const hour = new Date(msg.created_at).getUTCHours();
       hourCounts[hour] = (hourCounts[hour] || 0) + 1;
     });
 

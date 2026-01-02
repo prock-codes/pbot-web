@@ -131,3 +131,61 @@ export function getLocalDateString(date: Date = new Date()): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+// Format a UTC ISO timestamp to local time string
+export function formatLocalTime(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+// Format a UTC ISO timestamp to local date string
+export function formatLocalDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+// Format a UTC ISO timestamp to full local date and time
+export function formatLocalDateTime(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+// Convert a UTC hour (0-23) to local hour and format it
+export function formatUtcHourToLocal(utcHour: number): string {
+  // Create a date with the UTC hour
+  const now = new Date();
+  const utcDate = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    utcHour,
+    0,
+    0
+  ));
+  // Get the local hour
+  const localHour = utcDate.getHours();
+  return formatHour(localHour);
+}
+
+// Get the user's timezone offset as a string (e.g., "UTC-5", "UTC+2")
+export function getTimezoneOffsetString(): string {
+  const offset = new Date().getTimezoneOffset();
+  const hours = Math.floor(Math.abs(offset) / 60);
+  const sign = offset <= 0 ? '+' : '-';
+  return `UTC${sign}${hours}`;
+}

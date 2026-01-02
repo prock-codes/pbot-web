@@ -11,9 +11,9 @@ import { VoiceActivity } from '@/components/server/voice-activity';
 import {
   formatNumber,
   formatVoiceTime,
-  formatHour,
   getXpProgress,
 } from '@/lib/utils';
+import { LocalHour } from '@/components/ui/local-time';
 import {
   MessageSquare,
   Mic,
@@ -115,7 +115,7 @@ export default async function ServerPage({ params }: ServerPageProps) {
             <span className="text-xs uppercase">Peak Hour</span>
           </div>
           <p className="text-2xl font-bold text-white">
-            {stats.peakHour !== null ? formatHour(stats.peakHour) : 'N/A'}
+            <LocalHour utcHour={stats.peakHour} />
           </p>
         </Card>
       </div>
