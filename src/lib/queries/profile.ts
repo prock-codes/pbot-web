@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { MemberWithLevel, DailyMemberStats, EmojiUsage, VoiceSession, VoiceStateChange } from '@/types';
-import { getLocalDateString } from '../utils';
+import { getUTCDateString } from '../utils';
 
 export async function getMemberProfile(
   guildId: string,
@@ -49,9 +49,10 @@ export async function getMemberDailyStats(
   userId: string,
   days = 30
 ): Promise<DailyMemberStats[]> {
+  // Use UTC dates since daily_member_stats stores dates in UTC
   const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  const startDateStr = getLocalDateString(startDate);
+  startDate.setUTCDate(startDate.getUTCDate() - days);
+  const startDateStr = getUTCDateString(startDate);
 
   const { data, error } = await supabase
     .from('daily_member_stats')
@@ -69,13 +70,13 @@ export async function getMemberDailyStats(
     dateMap.set(row.date, row);
   });
 
-  // Fill in missing dates with zeros
+  // Fill in missing dates with zeros (using UTC dates)
   const result: DailyMemberStats[] = [];
   const currentDate = new Date(startDate);
   const today = new Date();
 
   while (currentDate <= today) {
-    const dateStr = getLocalDateString(currentDate);
+    const dateStr = getUTCDateString(currentDate);
     const existing = dateMap.get(dateStr);
     if (existing) {
       result.push(existing);
@@ -91,7 +92,7 @@ export async function getMemberDailyStats(
         xp_earned: 0,
       });
     }
-    currentDate.setDate(currentDate.getDate() + 1);
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
   }
 
   return result;
@@ -106,10 +107,10 @@ export async function getMemberYearlyVoiceStats(
   guildId: string,
   userId: string
 ): Promise<YearlyVoiceDay[]> {
-  // Get Jan 1 of current year
+  // Get Jan 1 of current year in UTC
   const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const startDateStr = getLocalDateString(startOfYear);
+  const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  const startDateStr = getUTCDateString(startOfYear);
 
   const { data, error } = await supabase
     .from('daily_member_stats')
@@ -127,18 +128,18 @@ export async function getMemberYearlyVoiceStats(
     dateMap.set(row.date, row.voice_minutes || 0);
   });
 
-  // Fill in all days from Jan 1 to today
+  // Fill in all days from Jan 1 to today (using UTC dates)
   const result: YearlyVoiceDay[] = [];
   const currentDate = new Date(startOfYear);
   const today = new Date();
 
   while (currentDate <= today) {
-    const dateStr = getLocalDateString(currentDate);
+    const dateStr = getUTCDateString(currentDate);
     result.push({
       date: dateStr,
       voice_minutes: dateMap.get(dateStr) || 0,
     });
-    currentDate.setDate(currentDate.getDate() + 1);
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
   }
 
   return result;
