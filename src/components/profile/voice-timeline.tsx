@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDuration, formatVoiceTime, getLocalDateString } from '@/lib/utils';
+import { formatDuration, formatVoiceTime, getUTCDateString } from '@/lib/utils';
 import {
   getMemberVoiceSessions,
   getMemberVoiceStateChanges,
@@ -238,10 +238,11 @@ function getDayColor(minutes: number, maxMinutes: number): string {
 }
 
 // Build contribution graph data structure
+// Uses UTC dates to match database storage
 function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
-  const year = today.getFullYear();
-  const startOfYear = new Date(year, 0, 1);
-  const todayStr = getLocalDateString(today);
+  const year = today.getUTCFullYear();
+  const startOfYear = new Date(Date.UTC(year, 0, 1));
+  const todayStr = getUTCDateString(today);
 
   // Create a map for quick lookup
   const statsMap = new Map<string, number>();
@@ -265,13 +266,13 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
   // Start from the first day of the year
   const currentDate = new Date(startOfYear);
 
-  // Pad to start on Sunday
-  const startDayOfWeek = currentDate.getDay();
+  // Pad to start on Sunday (using UTC day of week)
+  const startDayOfWeek = currentDate.getUTCDay();
   let currentWeek: typeof weeks[0] = [];
 
   // Add empty days before Jan 1 if needed
   for (let i = 0; i < startDayOfWeek; i++) {
-    const padDate = new Date(year - 1, 11, 31 - (startDayOfWeek - 1 - i));
+    const padDate = new Date(Date.UTC(year - 1, 11, 31 - (startDayOfWeek - 1 - i)));
     currentWeek.push({
       date: padDate,
       dateStr: '',
@@ -281,9 +282,9 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
     });
   }
 
-  // Fill in all days of the year
-  while (currentDate.getFullYear() === year) {
-    const dateStr = getLocalDateString(currentDate);
+  // Fill in all days of the year (using UTC dates)
+  while (currentDate.getUTCFullYear() === year) {
+    const dateStr = getUTCDateString(currentDate);
     const minutes = statsMap.get(dateStr) || 0;
     const isToday = dateStr === todayStr;
     const isFuture = dateStr > todayStr;
@@ -314,7 +315,7 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
       currentWeek = [];
     }
 
-    currentDate.setDate(currentDate.getDate() + 1);
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
   }
 
   // Add remaining days of last week
@@ -327,20 +328,20 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
         isFuture: true,
         isToday: false,
       });
-      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
     weeks.push(currentWeek);
   }
 
-  // Calculate current streak (counting back from today)
+  // Calculate current streak (counting back from today, using UTC dates)
   currentStreak = 0;
   const checkDateForStreak = new Date(today);
   while (true) {
-    const checkStr = getLocalDateString(checkDateForStreak);
+    const checkStr = getUTCDateString(checkDateForStreak);
     const mins = statsMap.get(checkStr) || 0;
     if (mins > 0) {
       currentStreak++;
-      checkDateForStreak.setDate(checkDateForStreak.getDate() - 1);
+      checkDateForStreak.setUTCDate(checkDateForStreak.getUTCDate() - 1);
     } else {
       break;
     }

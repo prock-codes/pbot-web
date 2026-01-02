@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { Guild, ServerStats, ActiveVoiceSession } from '@/types';
-import { getDayName, formatHour, getLocalDateString } from '../utils';
+import { getDayName, getUTCDateString } from '../utils';
 
 export async function getAllServers(): Promise<Guild[]> {
   const { data, error } = await supabase
@@ -162,9 +162,10 @@ export async function getServerDailyActivity(
   guildId: string,
   days: number
 ): Promise<DailyActivityStats[]> {
+  // Use UTC dates since daily_member_stats stores dates in UTC
   const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  const startDateStr = getLocalDateString(startDate);
+  startDate.setUTCDate(startDate.getUTCDate() - days);
+  const startDateStr = getUTCDateString(startDate);
 
   // Fetch daily member stats aggregated by date
   const { data, error } = await supabase
@@ -192,20 +193,20 @@ export async function getServerDailyActivity(
     }
   });
 
-  // Convert to array and fill in missing dates
+  // Convert to array and fill in missing dates (using UTC dates)
   const result: DailyActivityStats[] = [];
   const currentDate = new Date(startDate);
   const today = new Date();
 
   while (currentDate <= today) {
-    const dateStr = getLocalDateString(currentDate);
+    const dateStr = getUTCDateString(currentDate);
     const stats = dateMap.get(dateStr);
     result.push({
       date: dateStr,
       messages: stats?.messages || 0,
       voiceMinutes: stats?.voiceMinutes || 0,
     });
-    currentDate.setDate(currentDate.getDate() + 1);
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
   }
 
   return result;

@@ -132,6 +132,15 @@ export function getLocalDateString(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+// Get UTC date string in YYYY-MM-DD format
+// Use this for querying database tables that store dates in UTC
+export function getUTCDateString(date: Date = new Date()): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Format a UTC ISO timestamp to local time string
 export function formatLocalTime(isoString: string): string {
   const date = new Date(isoString);
