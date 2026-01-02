@@ -132,6 +132,54 @@ export function getLocalDateString(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+// Get the start of a local day (midnight) for a given date
+export function getLocalMidnight(date: Date): Date {
+  const midnight = new Date(date);
+  midnight.setHours(0, 0, 0, 0);
+  return midnight;
+}
+
+// Get the start of the next local day
+export function getNextLocalMidnight(date: Date): Date {
+  const nextDay = new Date(date);
+  nextDay.setHours(0, 0, 0, 0);
+  nextDay.setDate(nextDay.getDate() + 1);
+  return nextDay;
+}
+
+// Split voice sessions at local midnight boundaries
+// Returns a map of local date strings to voice minutes
+export function splitSessionsAtLocalMidnight(
+  sessions: { joined_at: string; left_at: string | null }[]
+): Map<string, number> {
+  const dateMinutes = new Map<string, number>();
+
+  for (const session of sessions) {
+    const start = new Date(session.joined_at);
+    const end = session.left_at ? new Date(session.left_at) : new Date();
+
+    // Handle each day the session spans
+    let current = new Date(start);
+
+    while (current < end) {
+      const dateStr = getLocalDateString(current);
+      const dayEnd = getNextLocalMidnight(current);
+
+      // Calculate minutes for this day
+      const segmentEnd = dayEnd < end ? dayEnd : end;
+      const segmentMinutes = (segmentEnd.getTime() - current.getTime()) / 60000;
+
+      // Add to the day's total
+      dateMinutes.set(dateStr, (dateMinutes.get(dateStr) || 0) + segmentMinutes);
+
+      // Move to next day
+      current = dayEnd;
+    }
+  }
+
+  return dateMinutes;
+}
+
 // Get UTC date string in YYYY-MM-DD format
 // Use this for querying database tables that store dates in UTC
 export function getUTCDateString(date: Date = new Date()): string {

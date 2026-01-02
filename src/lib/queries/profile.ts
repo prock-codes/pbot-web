@@ -108,6 +108,35 @@ export interface YearlyVoiceDay {
   voice_minutes: number;
 }
 
+// Raw voice session data for client-side timezone processing
+export interface RawVoiceSession {
+  joined_at: string;
+  left_at: string | null;
+  duration_seconds: number | null;
+}
+
+// Fetch raw voice sessions for timezone-aware calculations
+// The client will split these at local midnight to get accurate daily totals
+export async function getMemberYearlyVoiceSessions(
+  guildId: string,
+  userId: string
+): Promise<RawVoiceSession[]> {
+  // Get Jan 1 of current year in UTC
+  const now = new Date();
+  const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+
+  const { data, error } = await supabase
+    .from('voice_sessions')
+    .select('joined_at, left_at, duration_seconds')
+    .eq('guild_id', guildId)
+    .eq('user_id', userId)
+    .gte('joined_at', startOfYear.toISOString())
+    .order('joined_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
 export async function getMemberYearlyVoiceStats(
   guildId: string,
   userId: string

@@ -3,12 +3,11 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDuration, formatVoiceTime, getUTCDateString, formatUtcDateToLocal } from '@/lib/utils';
+import { formatDuration, formatVoiceTime, getLocalDateString, splitSessionsAtLocalMidnight } from '@/lib/utils';
 import {
   getMemberVoiceSessions,
   getMemberVoiceStateChanges,
-  getMemberYearlyVoiceStats,
-  YearlyVoiceDay,
+  getMemberYearlyVoiceSessions,
 } from '@/lib/queries/profile';
 import { VoiceSession, VoiceStateChange, VoiceStateEventType } from '@/types';
 import {
@@ -238,20 +237,15 @@ function getDayColor(minutes: number, maxMinutes: number): string {
 }
 
 // Build contribution graph data structure
-// Uses UTC dates to match database storage
-function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
-  const year = today.getUTCFullYear();
-  const startOfYear = new Date(Date.UTC(year, 0, 1));
-  const todayStr = getUTCDateString(today);
-
-  // Create a map for quick lookup
-  const statsMap = new Map<string, number>();
-  yearlyStats.forEach((day) => {
-    statsMap.set(day.date, day.voice_minutes);
-  });
+// Uses LOCAL dates (user's timezone) for accurate display
+function buildGraphData(statsMap: Map<string, number>, today: Date) {
+  const year = today.getFullYear(); // Local year
+  const startOfYear = new Date(year, 0, 1); // Local Jan 1
+  const todayStr = getLocalDateString(today);
 
   // Find max minutes for color scaling
-  const maxMinutes = Math.max(...yearlyStats.map((d) => d.voice_minutes), 1);
+  const allMinutes = Array.from(statsMap.values());
+  const maxMinutes = Math.max(...allMinutes, 1);
 
   // Calculate stats
   let totalMinutes = 0;
@@ -263,16 +257,16 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
   // Build weeks array (53 weeks x 7 days)
   const weeks: { date: Date; dateStr: string; minutes: number; isFuture: boolean; isToday: boolean }[][] = [];
 
-  // Start from the first day of the year
+  // Start from the first day of the year (local time)
   const currentDate = new Date(startOfYear);
 
-  // Pad to start on Sunday (using UTC day of week)
-  const startDayOfWeek = currentDate.getUTCDay();
+  // Pad to start on Sunday (using local day of week)
+  const startDayOfWeek = currentDate.getDay();
   let currentWeek: typeof weeks[0] = [];
 
   // Add empty days before Jan 1 if needed
   for (let i = 0; i < startDayOfWeek; i++) {
-    const padDate = new Date(Date.UTC(year - 1, 11, 31 - (startDayOfWeek - 1 - i)));
+    const padDate = new Date(year - 1, 11, 31 - (startDayOfWeek - 1 - i));
     currentWeek.push({
       date: padDate,
       dateStr: '',
@@ -282,10 +276,10 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
     });
   }
 
-  // Fill in all days of the year (using UTC dates)
-  while (currentDate.getUTCFullYear() === year) {
-    const dateStr = getUTCDateString(currentDate);
-    const minutes = statsMap.get(dateStr) || 0;
+  // Fill in all days of the year (using local dates)
+  while (currentDate.getFullYear() === year) {
+    const dateStr = getLocalDateString(currentDate);
+    const minutes = Math.round(statsMap.get(dateStr) || 0);
     const isToday = dateStr === todayStr;
     const isFuture = dateStr > todayStr;
 
@@ -315,7 +309,7 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
       currentWeek = [];
     }
 
-    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    currentDate.setDate(currentDate.getDate() + 1);
   }
 
   // Add remaining days of last week
@@ -328,20 +322,20 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
         isFuture: true,
         isToday: false,
       });
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      currentDate.setDate(currentDate.getDate() + 1);
     }
     weeks.push(currentWeek);
   }
 
-  // Calculate current streak (counting back from today, using UTC dates)
+  // Calculate current streak (counting back from today, using local dates)
   currentStreak = 0;
   const checkDateForStreak = new Date(today);
   while (true) {
-    const checkStr = getUTCDateString(checkDateForStreak);
+    const checkStr = getLocalDateString(checkDateForStreak);
     const mins = statsMap.get(checkStr) || 0;
     if (mins > 0) {
       currentStreak++;
-      checkDateForStreak.setUTCDate(checkDateForStreak.getUTCDate() - 1);
+      checkDateForStreak.setDate(checkDateForStreak.getDate() - 1);
     } else {
       break;
     }
@@ -350,7 +344,7 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
   return {
     weeks,
     maxMinutes,
-    totalMinutes,
+    totalMinutes: Math.round(totalMinutes),
     daysActive,
     currentStreak,
     longestStreak,
@@ -362,7 +356,7 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
   const [activeSession, setActiveSession] = useState<SessionWithChanges | null>(null);
-  const [yearlyStats, setYearlyStats] = useState<YearlyVoiceDay[]>([]);
+  const [voiceMinutesByDate, setVoiceMinutesByDate] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [hoveredDay, setHoveredDay] = useState<{ date: string; minutes: number; x: number; y: number } | null>(null);
   const [clientDate, setClientDate] = useState<Date | null>(null);
@@ -374,9 +368,9 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
 
   const loadData = useCallback(async (isInitialLoad = false) => {
     try {
-      const [voiceSessions, yearly] = await Promise.all([
+      const [voiceSessions, yearlySessions] = await Promise.all([
         getMemberVoiceSessions(serverId, memberId, 1, true),
-        getMemberYearlyVoiceStats(serverId, memberId),
+        getMemberYearlyVoiceSessions(serverId, memberId),
       ]);
 
       // Check for active session
@@ -394,7 +388,10 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
         setActiveSession(null);
       }
 
-      setYearlyStats(yearly);
+      // Split sessions at local midnight to get accurate per-day totals
+      // This properly handles sessions that span midnight in the user's timezone
+      const minutesByDate = splitSessionsAtLocalMidnight(yearlySessions);
+      setVoiceMinutesByDate(minutesByDate);
     } catch (err) {
       console.error('Failed to load voice data:', err);
     } finally {
@@ -431,8 +428,8 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
         longestStreak: 0,
       };
     }
-    return buildGraphData(yearlyStats, clientDate);
-  }, [yearlyStats, clientDate]);
+    return buildGraphData(voiceMinutesByDate, clientDate);
+  }, [voiceMinutesByDate, clientDate]);
 
   if (loading || !clientDate) {
     return (
@@ -620,11 +617,10 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
               </div>
               <div className="text-gray-400 text-xs">
                 {(() => {
-                  // Convert UTC date to local date for display
-                  // Using midnight UTC shifts dates back for users behind UTC
+                  // Date is already in local format (YYYY-MM-DD)
                   const [year, month, day] = hoveredDay.date.split('-').map(Number);
-                  const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-                  return utcDate.toLocaleDateString('en-US', {
+                  const localDate = new Date(year, month - 1, day);
+                  return localDate.toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
