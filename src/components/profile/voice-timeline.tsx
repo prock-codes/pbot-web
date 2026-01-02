@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDuration, formatVoiceTime, getUTCDateString } from '@/lib/utils';
+import { formatDuration, formatVoiceTime, getUTCDateString, formatUtcDateToLocal } from '@/lib/utils';
 import {
   getMemberVoiceSessions,
   getMemberVoiceStateChanges,
@@ -620,10 +620,10 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
               </div>
               <div className="text-gray-400 text-xs">
                 {(() => {
-                  // Parse date string directly to avoid timezone issues
+                  // Convert UTC date to local date for display
                   const [year, month, day] = hoveredDay.date.split('-').map(Number);
-                  const date = new Date(year, month - 1, day);
-                  return date.toLocaleDateString('en-US', {
+                  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+                  return utcDate.toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',

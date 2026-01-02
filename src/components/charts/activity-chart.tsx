@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp } from 'lucide-react';
+import { formatUtcDateToLocal } from '@/lib/utils';
 
 export type TimeRange = '7d' | '14d' | '30d' | '90d';
 
@@ -67,15 +68,9 @@ export function ActivityChart({
     loadData();
   }, [timeRange, fetchData]);
 
-  // Format date for display
-  // Parse date string directly to avoid timezone issues (dateStr is "YYYY-MM-DD")
+  // Format date for display - converts UTC date to user's local timezone
   const formatDate = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
+    return formatUtcDateToLocal(dateStr);
   };
 
   // Prepare chart data

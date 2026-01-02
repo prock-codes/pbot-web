@@ -54,12 +54,18 @@ export async function getMemberDailyStats(
   startDate.setUTCDate(startDate.getUTCDate() - days);
   const startDateStr = getUTCDateString(startDate);
 
+  // Include tomorrow in UTC to capture all of "today" for users behind UTC
+  const endDate = new Date();
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const endDateStr = getUTCDateString(endDate);
+
   const { data, error } = await supabase
     .from('daily_member_stats')
     .select('*')
     .eq('guild_id', guildId)
     .eq('user_id', userId)
     .gte('date', startDateStr)
+    .lte('date', endDateStr)
     .order('date', { ascending: true });
 
   if (error) throw error;
@@ -70,12 +76,11 @@ export async function getMemberDailyStats(
     dateMap.set(row.date, row);
   });
 
-  // Fill in missing dates with zeros (using UTC dates)
+  // Fill in missing dates with zeros (including tomorrow in UTC for timezone coverage)
   const result: DailyMemberStats[] = [];
   const currentDate = new Date(startDate);
-  const today = new Date();
 
-  while (currentDate <= today) {
+  while (currentDate <= endDate) {
     const dateStr = getUTCDateString(currentDate);
     const existing = dateMap.get(dateStr);
     if (existing) {
@@ -112,12 +117,18 @@ export async function getMemberYearlyVoiceStats(
   const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   const startDateStr = getUTCDateString(startOfYear);
 
+  // Include tomorrow in UTC to capture all of "today" for users behind UTC
+  const endDate = new Date();
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const endDateStr = getUTCDateString(endDate);
+
   const { data, error } = await supabase
     .from('daily_member_stats')
     .select('date, voice_minutes')
     .eq('guild_id', guildId)
     .eq('user_id', userId)
     .gte('date', startDateStr)
+    .lte('date', endDateStr)
     .order('date', { ascending: true });
 
   if (error) throw error;
@@ -128,12 +139,11 @@ export async function getMemberYearlyVoiceStats(
     dateMap.set(row.date, row.voice_minutes || 0);
   });
 
-  // Fill in all days from Jan 1 to today (using UTC dates)
+  // Fill in all days from Jan 1 to tomorrow in UTC (for timezone coverage)
   const result: YearlyVoiceDay[] = [];
   const currentDate = new Date(startOfYear);
-  const today = new Date();
 
-  while (currentDate <= today) {
+  while (currentDate <= endDate) {
     const dateStr = getUTCDateString(currentDate);
     result.push({
       date: dateStr,

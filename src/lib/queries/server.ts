@@ -167,12 +167,20 @@ export async function getServerDailyActivity(
   startDate.setUTCDate(startDate.getUTCDate() - days);
   const startDateStr = getUTCDateString(startDate);
 
+  // Include tomorrow in UTC to capture all of "today" for users behind UTC
+  // For example, a CST (UTC-6) user at 10 PM local time is in "tomorrow" UTC
+  // Their recent activity would be stored under tomorrow's UTC date
+  const endDate = new Date();
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const endDateStr = getUTCDateString(endDate);
+
   // Fetch daily member stats aggregated by date
   const { data, error } = await supabase
     .from('daily_member_stats')
     .select('date, message_count, voice_minutes')
     .eq('guild_id', guildId)
     .gte('date', startDateStr)
+    .lte('date', endDateStr)
     .order('date', { ascending: true });
 
   if (error) throw error;
@@ -193,12 +201,12 @@ export async function getServerDailyActivity(
     }
   });
 
-  // Convert to array and fill in missing dates (using UTC dates)
+  // Convert to array and fill in missing dates
+  // Include up to tomorrow in UTC to ensure users see all recent activity
   const result: DailyActivityStats[] = [];
   const currentDate = new Date(startDate);
-  const today = new Date();
 
-  while (currentDate <= today) {
+  while (currentDate <= endDate) {
     const dateStr = getUTCDateString(currentDate);
     const stats = dateMap.get(dateStr);
     result.push({
