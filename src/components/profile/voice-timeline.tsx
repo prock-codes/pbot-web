@@ -621,8 +621,9 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
               <div className="text-gray-400 text-xs">
                 {(() => {
                   // Convert UTC date to local date for display
+                  // Using midnight UTC shifts dates back for users behind UTC
                   const [year, month, day] = hoveredDay.date.split('-').map(Number);
-                  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+                  const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
                   return utcDate.toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
