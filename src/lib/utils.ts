@@ -198,3 +198,30 @@ export function getTimezoneOffsetString(): string {
   const sign = offset <= 0 ? '+' : '-';
   return `UTC${sign}${hours}`;
 }
+
+// Convert a UTC date string (YYYY-MM-DD) to local date string for display
+// This accounts for timezone differences when showing activity data
+// Activity stored under "2026-01-03" UTC may have occurred on "2026-01-02" local time
+export function formatUtcDateToLocal(utcDateStr: string): string {
+  // Parse the UTC date string and create a Date at noon UTC
+  // Using noon avoids edge cases with DST transitions
+  const [year, month, day] = utcDateStr.split('-').map(Number);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+
+  return utcDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+// Get local date string from a UTC date string (YYYY-MM-DD format)
+// Returns the local equivalent date in YYYY-MM-DD format
+export function getLocalDateFromUtc(utcDateStr: string): string {
+  const [year, month, day] = utcDateStr.split('-').map(Number);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+
+  const localYear = utcDate.getFullYear();
+  const localMonth = String(utcDate.getMonth() + 1).padStart(2, '0');
+  const localDay = String(utcDate.getDate()).padStart(2, '0');
+  return `${localYear}-${localMonth}-${localDay}`;
+}
