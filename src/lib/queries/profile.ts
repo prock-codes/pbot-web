@@ -108,6 +108,12 @@ export interface YearlyVoiceDay {
   voice_minutes: number;
 }
 
+export interface YearlyActivityDay {
+  date: string;
+  voice_minutes: number;
+  message_count: number;
+}
+
 export async function getMemberYearlyVoiceStats(
   guildId: string,
   userId: string
@@ -148,6 +154,58 @@ export async function getMemberYearlyVoiceStats(
     result.push({
       date: dateStr,
       voice_minutes: dateMap.get(dateStr) || 0,
+    });
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+  }
+
+  return result;
+}
+
+export async function getMemberYearlyActivityStats(
+  guildId: string,
+  userId: string
+): Promise<YearlyActivityDay[]> {
+  // Get Jan 1 of current year in UTC
+  const now = new Date();
+  const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  const startDateStr = getUTCDateString(startOfYear);
+
+  // Include tomorrow in UTC to capture all of "today" for users behind UTC
+  const endDate = new Date();
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const endDateStr = getUTCDateString(endDate);
+
+  const { data, error } = await supabase
+    .from('daily_member_stats')
+    .select('date, voice_minutes, message_count')
+    .eq('guild_id', guildId)
+    .eq('user_id', userId)
+    .gte('date', startDateStr)
+    .lte('date', endDateStr)
+    .order('date', { ascending: true });
+
+  if (error) throw error;
+
+  // Create a map of existing data
+  const dateMap = new Map<string, { voice_minutes: number; message_count: number }>();
+  (data || []).forEach((row) => {
+    dateMap.set(row.date, {
+      voice_minutes: row.voice_minutes || 0,
+      message_count: row.message_count || 0,
+    });
+  });
+
+  // Fill in all days from Jan 1 to tomorrow in UTC (for timezone coverage)
+  const result: YearlyActivityDay[] = [];
+  const currentDate = new Date(startOfYear);
+
+  while (currentDate <= endDate) {
+    const dateStr = getUTCDateString(currentDate);
+    const stats = dateMap.get(dateStr);
+    result.push({
+      date: dateStr,
+      voice_minutes: stats?.voice_minutes || 0,
+      message_count: stats?.message_count || 0,
     });
     currentDate.setUTCDate(currentDate.getUTCDate() + 1);
   }
