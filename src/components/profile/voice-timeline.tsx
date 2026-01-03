@@ -3,12 +3,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDuration, formatVoiceTime, getUTCDateString, formatUtcDateToLocal } from '@/lib/utils';
+import { formatDuration, formatVoiceTime, getUTCDateString, formatNumber } from '@/lib/utils';
 import {
   getMemberVoiceSessions,
   getMemberVoiceStateChanges,
-  getMemberYearlyVoiceStats,
-  YearlyVoiceDay,
+  getMemberYearlyActivityStats,
+  YearlyActivityDay,
 } from '@/lib/queries/profile';
 import { VoiceSession, VoiceStateChange, VoiceStateEventType } from '@/types';
 import {
@@ -22,6 +22,8 @@ import {
   Hash,
   Flame,
   Calendar,
+  MessageSquare,
+  Activity,
 } from 'lucide-react';
 
 interface VoiceTimelineProps {
@@ -33,6 +35,8 @@ interface SessionWithChanges extends VoiceSession {
   stateChanges: VoiceStateChange[];
 }
 
+type ActivityType = 'voice' | 'text' | 'combined';
+
 // Colors for different states in live session bar
 const STATE_COLORS = {
   normal: '#3ba55c',
@@ -42,13 +46,31 @@ const STATE_COLORS = {
   video: '#9b59b6',
 };
 
-// Green color scale for contribution graph (GitHub-style)
-const GRAPH_COLORS = {
+// Green color scale for voice contribution graph (GitHub-style)
+const VOICE_GRAPH_COLORS = {
   empty: '#161b22',
   level1: '#0e4429',
   level2: '#006d32',
   level3: '#26a641',
   level4: '#39d353',
+};
+
+// Blue color scale for text contribution graph
+const TEXT_GRAPH_COLORS = {
+  empty: '#161b22',
+  level1: '#0a3069',
+  level2: '#0969da',
+  level3: '#54aeff',
+  level4: '#80ccff',
+};
+
+// Purple color scale for combined activity graph
+const COMBINED_GRAPH_COLORS = {
+  empty: '#161b22',
+  level1: '#3d1a5c',
+  level2: '#6e40aa',
+  level3: '#9b59b6',
+  level4: '#c792ea',
 };
 
 function getEventIcon(eventType: VoiceStateEventType) {
@@ -225,43 +247,85 @@ function calculateTimelineSegments(
   return segments;
 }
 
-// Get color for a day based on voice minutes relative to user's max
-function getDayColor(minutes: number, maxMinutes: number): string {
-  if (minutes === 0) return GRAPH_COLORS.empty;
-  if (maxMinutes === 0) return GRAPH_COLORS.empty;
+// Get color for a day based on activity value relative to max
+function getDayColor(value: number, maxValue: number, activityType: ActivityType): string {
+  const colorSet =
+    activityType === 'voice'
+      ? VOICE_GRAPH_COLORS
+      : activityType === 'text'
+        ? TEXT_GRAPH_COLORS
+        : COMBINED_GRAPH_COLORS;
 
-  const ratio = minutes / maxMinutes;
-  if (ratio <= 0.25) return GRAPH_COLORS.level1;
-  if (ratio <= 0.5) return GRAPH_COLORS.level2;
-  if (ratio <= 0.75) return GRAPH_COLORS.level3;
-  return GRAPH_COLORS.level4;
+  if (value === 0) return colorSet.empty;
+  if (maxValue === 0) return colorSet.empty;
+
+  const ratio = value / maxValue;
+  if (ratio <= 0.25) return colorSet.level1;
+  if (ratio <= 0.5) return colorSet.level2;
+  if (ratio <= 0.75) return colorSet.level3;
+  return colorSet.level4;
+}
+
+// Get graph color set based on activity type
+function getGraphColors(activityType: ActivityType) {
+  return activityType === 'voice'
+    ? VOICE_GRAPH_COLORS
+    : activityType === 'text'
+      ? TEXT_GRAPH_COLORS
+      : COMBINED_GRAPH_COLORS;
 }
 
 // Build contribution graph data structure
 // Uses UTC dates to match database storage
-function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
+function buildGraphData(yearlyStats: YearlyActivityDay[], today: Date, activityType: ActivityType) {
   const year = today.getUTCFullYear();
   const startOfYear = new Date(Date.UTC(year, 0, 1));
   const todayStr = getUTCDateString(today);
 
   // Create a map for quick lookup
-  const statsMap = new Map<string, number>();
+  const statsMap = new Map<string, YearlyActivityDay>();
   yearlyStats.forEach((day) => {
-    statsMap.set(day.date, day.voice_minutes);
+    statsMap.set(day.date, day);
   });
 
-  // Find max minutes for color scaling
-  const maxMinutes = Math.max(...yearlyStats.map((d) => d.voice_minutes), 1);
+  // Calculate value based on activity type
+  const getValue = (day: YearlyActivityDay | undefined): number => {
+    if (!day) return 0;
+    if (activityType === 'voice') return day.voice_minutes;
+    if (activityType === 'text') return day.message_count;
+    // Combined: normalize both to a score (voice in minutes, messages count)
+    // Weight them equally by normalizing to a 0-1 scale relative to their maxes
+    return day.voice_minutes + day.message_count;
+  };
+
+  // Find max value for color scaling
+  const maxValue = Math.max(
+    ...yearlyStats.map((d) => getValue(d)),
+    1
+  );
 
   // Calculate stats
-  let totalMinutes = 0;
-  let daysActive = 0;
-  let currentStreak = 0;
-  let longestStreak = 0;
-  let tempStreak = 0;
+  let totalVoiceMinutes = 0;
+  let totalMessages = 0;
+  let voiceDaysActive = 0;
+  let textDaysActive = 0;
+  let currentVoiceStreak = 0;
+  let longestVoiceStreak = 0;
+  let tempVoiceStreak = 0;
+  let currentTextStreak = 0;
+  let longestTextStreak = 0;
+  let tempTextStreak = 0;
 
   // Build weeks array (53 weeks x 7 days)
-  const weeks: { date: Date; dateStr: string; minutes: number; isFuture: boolean; isToday: boolean }[][] = [];
+  const weeks: {
+    date: Date;
+    dateStr: string;
+    voiceMinutes: number;
+    messageCount: number;
+    value: number;
+    isFuture: boolean;
+    isToday: boolean;
+  }[][] = [];
 
   // Start from the first day of the year
   const currentDate = new Date(startOfYear);
@@ -276,7 +340,9 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
     currentWeek.push({
       date: padDate,
       dateStr: '',
-      minutes: 0,
+      voiceMinutes: 0,
+      messageCount: 0,
+      value: 0,
       isFuture: false,
       isToday: false,
     });
@@ -285,27 +351,40 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
   // Fill in all days of the year (using UTC dates)
   while (currentDate.getUTCFullYear() === year) {
     const dateStr = getUTCDateString(currentDate);
-    const minutes = statsMap.get(dateStr) || 0;
+    const dayStats = statsMap.get(dateStr);
+    const voiceMinutes = dayStats?.voice_minutes || 0;
+    const messageCount = dayStats?.message_count || 0;
+    const value = getValue(dayStats);
     const isToday = dateStr === todayStr;
     const isFuture = dateStr > todayStr;
 
     currentWeek.push({
       date: new Date(currentDate),
       dateStr,
-      minutes,
+      voiceMinutes,
+      messageCount,
+      value,
       isFuture,
       isToday,
     });
 
     // Track stats (only for past/today)
     if (!isFuture) {
-      totalMinutes += minutes;
-      if (minutes > 0) {
-        daysActive++;
-        tempStreak++;
-        if (tempStreak > longestStreak) longestStreak = tempStreak;
+      totalVoiceMinutes += voiceMinutes;
+      totalMessages += messageCount;
+      if (voiceMinutes > 0) {
+        voiceDaysActive++;
+        tempVoiceStreak++;
+        if (tempVoiceStreak > longestVoiceStreak) longestVoiceStreak = tempVoiceStreak;
       } else {
-        tempStreak = 0;
+        tempVoiceStreak = 0;
+      }
+      if (messageCount > 0) {
+        textDaysActive++;
+        tempTextStreak++;
+        if (tempTextStreak > longestTextStreak) longestTextStreak = tempTextStreak;
+      } else {
+        tempTextStreak = 0;
       }
     }
 
@@ -324,7 +403,9 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
       currentWeek.push({
         date: new Date(currentDate),
         dateStr: '',
-        minutes: 0,
+        voiceMinutes: 0,
+        messageCount: 0,
+        value: 0,
         isFuture: true,
         isToday: false,
       });
@@ -333,15 +414,28 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
     weeks.push(currentWeek);
   }
 
-  // Calculate current streak (counting back from today, using UTC dates)
-  currentStreak = 0;
-  const checkDateForStreak = new Date(today);
+  // Calculate current streaks (counting back from today, using UTC dates)
+  currentVoiceStreak = 0;
+  const checkVoiceDateForStreak = new Date(today);
   while (true) {
-    const checkStr = getUTCDateString(checkDateForStreak);
-    const mins = statsMap.get(checkStr) || 0;
+    const checkStr = getUTCDateString(checkVoiceDateForStreak);
+    const mins = statsMap.get(checkStr)?.voice_minutes || 0;
     if (mins > 0) {
-      currentStreak++;
-      checkDateForStreak.setUTCDate(checkDateForStreak.getUTCDate() - 1);
+      currentVoiceStreak++;
+      checkVoiceDateForStreak.setUTCDate(checkVoiceDateForStreak.getUTCDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  currentTextStreak = 0;
+  const checkTextDateForStreak = new Date(today);
+  while (true) {
+    const checkStr = getUTCDateString(checkTextDateForStreak);
+    const msgs = statsMap.get(checkStr)?.message_count || 0;
+    if (msgs > 0) {
+      currentTextStreak++;
+      checkTextDateForStreak.setUTCDate(checkTextDateForStreak.getUTCDate() - 1);
     } else {
       break;
     }
@@ -349,11 +443,15 @@ function buildGraphData(yearlyStats: YearlyVoiceDay[], today: Date) {
 
   return {
     weeks,
-    maxMinutes,
-    totalMinutes,
-    daysActive,
-    currentStreak,
-    longestStreak,
+    maxValue,
+    totalVoiceMinutes,
+    totalMessages,
+    voiceDaysActive,
+    textDaysActive,
+    currentVoiceStreak,
+    longestVoiceStreak,
+    currentTextStreak,
+    longestTextStreak,
   };
 }
 
@@ -362,10 +460,17 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
   const [activeSession, setActiveSession] = useState<SessionWithChanges | null>(null);
-  const [yearlyStats, setYearlyStats] = useState<YearlyVoiceDay[]>([]);
+  const [yearlyStats, setYearlyStats] = useState<YearlyActivityDay[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hoveredDay, setHoveredDay] = useState<{ date: string; minutes: number; x: number; y: number } | null>(null);
+  const [hoveredDay, setHoveredDay] = useState<{
+    date: string;
+    voiceMinutes: number;
+    messageCount: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [clientDate, setClientDate] = useState<Date | null>(null);
+  const [activityType, setActivityType] = useState<ActivityType>('combined');
 
   // Set the date on client side to avoid hydration mismatch
   useEffect(() => {
@@ -376,7 +481,7 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
     try {
       const [voiceSessions, yearly] = await Promise.all([
         getMemberVoiceSessions(serverId, memberId, 1, true),
-        getMemberYearlyVoiceStats(serverId, memberId),
+        getMemberYearlyActivityStats(serverId, memberId),
       ]);
 
       // Check for active session
@@ -396,7 +501,7 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
 
       setYearlyStats(yearly);
     } catch (err) {
-      console.error('Failed to load voice data:', err);
+      console.error('Failed to load activity data:', err);
     } finally {
       if (isInitialLoad) {
         setLoading(false);
@@ -424,23 +529,27 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
     if (!clientDate) {
       return {
         weeks: [],
-        maxMinutes: 0,
-        totalMinutes: 0,
-        daysActive: 0,
-        currentStreak: 0,
-        longestStreak: 0,
+        maxValue: 0,
+        totalVoiceMinutes: 0,
+        totalMessages: 0,
+        voiceDaysActive: 0,
+        textDaysActive: 0,
+        currentVoiceStreak: 0,
+        longestVoiceStreak: 0,
+        currentTextStreak: 0,
+        longestTextStreak: 0,
       };
     }
-    return buildGraphData(yearlyStats, clientDate);
-  }, [yearlyStats, clientDate]);
+    return buildGraphData(yearlyStats, clientDate, activityType);
+  }, [yearlyStats, clientDate, activityType]);
 
   if (loading || !clientDate) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Mic className="w-5 h-5" />
-            Voice Activity
+            <Activity className="w-5 h-5" />
+            Activity
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -453,14 +562,53 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
   }
 
   const year = clientDate.getFullYear();
+  const graphColors = getGraphColors(activityType);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Mic className="w-5 h-5" />
-          Voice Activity
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="w-5 h-5" />
+            Activity
+          </CardTitle>
+          {/* Activity Type Toggle */}
+          <div className="flex items-center gap-1 bg-discord-darker rounded-lg p-1">
+            <button
+              onClick={() => setActivityType('combined')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activityType === 'combined'
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'text-gray-400 hover:text-white hover:bg-discord-lighter/50'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              All
+            </button>
+            <button
+              onClick={() => setActivityType('voice')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activityType === 'voice'
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'text-gray-400 hover:text-white hover:bg-discord-lighter/50'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              Voice
+            </button>
+            <button
+              onClick={() => setActivityType('text')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activityType === 'text'
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'text-gray-400 hover:text-white hover:bg-discord-lighter/50'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Text
+            </button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {/* Active Session Bar */}
@@ -510,25 +658,60 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
 
         {/* Summary Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="bg-discord-darker rounded-lg p-3 text-center">
-            <div className="text-lg font-bold text-white">{formatVoiceTime(graphData.totalMinutes)}</div>
-            <div className="text-xs text-gray-400">Total Time</div>
-          </div>
-          <div className="bg-discord-darker rounded-lg p-3 text-center">
-            <div className="text-lg font-bold text-white">{graphData.daysActive}</div>
-            <div className="text-xs text-gray-400">Days Active</div>
-          </div>
-          <div className="bg-discord-darker rounded-lg p-3 text-center">
-            <div className="flex items-center justify-center gap-1">
-              <Flame className="w-4 h-4 text-orange-500" />
-              <span className="text-lg font-bold text-white">{graphData.currentStreak}</span>
-            </div>
-            <div className="text-xs text-gray-400">Current Streak</div>
-          </div>
-          <div className="bg-discord-darker rounded-lg p-3 text-center">
-            <div className="text-lg font-bold text-white">{graphData.longestStreak}</div>
-            <div className="text-xs text-gray-400">Longest Streak</div>
-          </div>
+          {activityType === 'voice' || activityType === 'combined' ? (
+            <>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{formatVoiceTime(graphData.totalVoiceMinutes)}</div>
+                <div className="text-xs text-gray-400">Voice Time</div>
+              </div>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="flex items-center justify-center gap-1">
+                  <Flame className="w-4 h-4 text-orange-500" />
+                  <span className="text-lg font-bold text-white">{graphData.currentVoiceStreak}</span>
+                </div>
+                <div className="text-xs text-gray-400">Voice Streak</div>
+              </div>
+            </>
+          ) : null}
+          {activityType === 'text' || activityType === 'combined' ? (
+            <>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{formatNumber(graphData.totalMessages)}</div>
+                <div className="text-xs text-gray-400">Messages</div>
+              </div>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="flex items-center justify-center gap-1">
+                  <Flame className="w-4 h-4 text-blue-500" />
+                  <span className="text-lg font-bold text-white">{graphData.currentTextStreak}</span>
+                </div>
+                <div className="text-xs text-gray-400">Text Streak</div>
+              </div>
+            </>
+          ) : null}
+          {activityType === 'voice' && (
+            <>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{graphData.voiceDaysActive}</div>
+                <div className="text-xs text-gray-400">Days Active</div>
+              </div>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{graphData.longestVoiceStreak}</div>
+                <div className="text-xs text-gray-400">Longest Streak</div>
+              </div>
+            </>
+          )}
+          {activityType === 'text' && (
+            <>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{graphData.textDaysActive}</div>
+                <div className="text-xs text-gray-400">Days Active</div>
+              </div>
+              <div className="bg-discord-darker rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{graphData.longestTextStreak}</div>
+                <div className="text-xs text-gray-400">Longest Streak</div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Contribution Graph */}
@@ -561,8 +744,8 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
                       }
 
                       const color = day.isFuture
-                        ? GRAPH_COLORS.empty
-                        : getDayColor(day.minutes, graphData.maxMinutes);
+                        ? graphColors.empty
+                        : getDayColor(day.value, graphData.maxValue, activityType);
 
                       return (
                         <div
@@ -575,7 +758,8 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
                             const rect = e.currentTarget.getBoundingClientRect();
                             setHoveredDay({
                               date: day.dateStr,
-                              minutes: day.minutes,
+                              voiceMinutes: day.voiceMinutes,
+                              messageCount: day.messageCount,
                               x: rect.left + rect.width / 2,
                               y: rect.top,
                             });
@@ -594,7 +778,7 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
           <div className="flex items-center justify-end gap-2 mt-3 text-xs text-gray-500">
             <span>Less</span>
             <div className="flex gap-1">
-              {Object.values(GRAPH_COLORS).map((color, i) => (
+              {Object.values(graphColors).map((color, i) => (
                 <div
                   key={i}
                   className="w-3 h-3 rounded-sm"
@@ -611,14 +795,25 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
               className="fixed z-50 bg-discord-darker border border-discord-lighter rounded-lg px-3 py-2 text-sm shadow-lg pointer-events-none"
               style={{
                 left: hoveredDay.x,
-                top: hoveredDay.y - 50,
+                top: hoveredDay.y - 60,
                 transform: 'translateX(-50%)',
               }}
             >
-              <div className="font-medium text-white">
-                {formatVoiceTime(hoveredDay.minutes)} voice time
+              <div className="font-medium text-white space-y-1">
+                {(activityType === 'voice' || activityType === 'combined') && (
+                  <div className="flex items-center gap-2">
+                    <Mic className="w-3 h-3 text-green-400" />
+                    <span>{formatVoiceTime(hoveredDay.voiceMinutes)} voice</span>
+                  </div>
+                )}
+                {(activityType === 'text' || activityType === 'combined') && (
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-3 h-3 text-blue-400" />
+                    <span>{formatNumber(hoveredDay.messageCount)} messages</span>
+                  </div>
+                )}
               </div>
-              <div className="text-gray-400 text-xs">
+              <div className="text-gray-400 text-xs mt-1">
                 {(() => {
                   // Convert UTC date to local date for display
                   const [year, month, day] = hoveredDay.date.split('-').map(Number);
@@ -638,7 +833,7 @@ export function VoiceTimeline({ serverId, memberId }: VoiceTimelineProps) {
         {/* Year label */}
         <div className="flex items-center justify-center gap-2 mt-4 text-sm text-gray-400">
           <Calendar className="w-4 h-4" />
-          <span>{year} Voice Activity</span>
+          <span>{year} Activity</span>
         </div>
       </CardContent>
     </Card>
