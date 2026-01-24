@@ -7,6 +7,7 @@ import {
   ServerActivityWeight,
   CombinedFriend,
 } from '@/types';
+import { calculateVoiceConnections } from './voice-connections';
 
 const TIME_RANGE_DAYS: Record<ConnectionTimeRange, number | null> = {
   '30d': 30,
@@ -488,6 +489,24 @@ export async function getCombinedTopFriends(
   userId: string,
   limit: number = 5
 ): Promise<CombinedFriend[]> {
+  // Check if voice connections cache is stale and refresh if needed
+  const maxAgeHours = 24;
+  const { data: cacheCheck } = await supabase
+    .from('voice_connections')
+    .select('calculated_at')
+    .eq('guild_id', guildId)
+    .eq('time_range', 'all')
+    .limit(1)
+    .single();
+
+  const isStale =
+    !cacheCheck?.calculated_at ||
+    Date.now() - new Date(cacheCheck.calculated_at).getTime() > maxAgeHours * 60 * 60 * 1000;
+
+  if (isStale) {
+    await calculateVoiceConnections(guildId, 'all');
+  }
+
   // Get server activity weight
   const weight = await getServerActivityWeight(guildId);
 
@@ -589,33 +608,19 @@ export async function getCombinedTopFriends(
   );
 
   // Calculate combined scores and add member info
-  // If only one type of connection exists, use that score directly
-  const hasVoiceConnections = voiceData && voiceData.length > 0;
-  const hasTextConnections = textData && textData.length > 0;
-
+  // Use actual values without caps for proper ordering
   const friends = Array.from(friendMap.values()).map((friend) => {
     const member = memberMap.get(friend.user_id);
 
-    let combinedScore: number;
+    // Convert voice seconds to hours for scoring
+    const voiceHours = friend.voice_seconds / 3600;
 
-    if (hasVoiceConnections && hasTextConnections) {
-      // Both types exist - use weighted combination
-      // Normalize scores to 0-100 scale for combination
-      const voiceMinutes = friend.voice_seconds / 60;
-      const normalizedVoice = Math.min(voiceMinutes / 600, 1) * 100;
-      const normalizedText = Math.min(friend.text_interaction_score / 100, 1) * 100;
+    // Combined score: voice hours + weighted text score
+    // Text score is scaled to be comparable to hours (e.g., 100 text score = 1 "equivalent hour")
+    const textContribution = (friend.text_interaction_score / 100) * weight.textWeight;
+    const voiceContribution = voiceHours * weight.voiceWeight;
 
-      combinedScore =
-        normalizedVoice * weight.voiceWeight +
-        normalizedText * weight.textWeight;
-    } else if (friend.voice_seconds > 0) {
-      // Only voice - use voice score directly
-      const voiceMinutes = friend.voice_seconds / 60;
-      combinedScore = Math.min(voiceMinutes / 600, 1) * 100;
-    } else {
-      // Only text - use text score directly
-      combinedScore = Math.min(friend.text_interaction_score / 100, 1) * 100;
-    }
+    const combinedScore = voiceContribution + textContribution;
 
     return {
       ...friend,
@@ -626,8 +631,13 @@ export async function getCombinedTopFriends(
     };
   });
 
-  // Sort by combined score and limit
+  // Sort by combined score (highest first), then by voice_seconds as tiebreaker
   return friends
-    .sort((a, b) => b.combined_score - a.combined_score)
+    .sort((a, b) => {
+      if (b.combined_score !== a.combined_score) {
+        return b.combined_score - a.combined_score;
+      }
+      return b.voice_seconds - a.voice_seconds;
+    })
     .slice(0, limit);
 }
