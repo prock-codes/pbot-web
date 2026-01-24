@@ -589,17 +589,17 @@ export async function getCombinedTopFriends(
   );
 
   // Calculate combined scores and add member info
-  // If only one type of connection exists, use that score directly
-  const hasVoiceConnections = voiceData && voiceData.length > 0;
-  const hasTextConnections = textData && textData.length > 0;
-
   const friends = Array.from(friendMap.values()).map((friend) => {
     const member = memberMap.get(friend.user_id);
 
     let combinedScore: number;
 
-    if (hasVoiceConnections && hasTextConnections) {
-      // Both types exist - use weighted combination
+    // Check what types of connections THIS FRIEND has (not global)
+    const friendHasVoice = friend.voice_seconds > 0;
+    const friendHasText = friend.text_interaction_score > 0;
+
+    if (friendHasVoice && friendHasText) {
+      // This friend has both types - use weighted combination
       // Normalize scores to 0-100 scale for combination
       const voiceMinutes = friend.voice_seconds / 60;
       const normalizedVoice = Math.min(voiceMinutes / 600, 1) * 100;
@@ -608,7 +608,7 @@ export async function getCombinedTopFriends(
       combinedScore =
         normalizedVoice * weight.voiceWeight +
         normalizedText * weight.textWeight;
-    } else if (friend.voice_seconds > 0) {
+    } else if (friendHasVoice) {
       // Only voice - use voice score directly
       const voiceMinutes = friend.voice_seconds / 60;
       combinedScore = Math.min(voiceMinutes / 600, 1) * 100;
