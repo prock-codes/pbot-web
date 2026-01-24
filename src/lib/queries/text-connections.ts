@@ -608,33 +608,19 @@ export async function getCombinedTopFriends(
   );
 
   // Calculate combined scores and add member info
+  // Use actual values without caps for proper ordering
   const friends = Array.from(friendMap.values()).map((friend) => {
     const member = memberMap.get(friend.user_id);
 
-    let combinedScore: number;
+    // Convert voice seconds to hours for scoring
+    const voiceHours = friend.voice_seconds / 3600;
 
-    // Check what types of connections THIS FRIEND has (not global)
-    const friendHasVoice = friend.voice_seconds > 0;
-    const friendHasText = friend.text_interaction_score > 0;
+    // Combined score: voice hours + weighted text score
+    // Text score is scaled to be comparable to hours (e.g., 100 text score = 1 "equivalent hour")
+    const textContribution = (friend.text_interaction_score / 100) * weight.textWeight;
+    const voiceContribution = voiceHours * weight.voiceWeight;
 
-    if (friendHasVoice && friendHasText) {
-      // This friend has both types - use weighted combination
-      // Normalize scores to 0-100 scale for combination
-      const voiceMinutes = friend.voice_seconds / 60;
-      const normalizedVoice = Math.min(voiceMinutes / 600, 1) * 100;
-      const normalizedText = Math.min(friend.text_interaction_score / 100, 1) * 100;
-
-      combinedScore =
-        normalizedVoice * weight.voiceWeight +
-        normalizedText * weight.textWeight;
-    } else if (friendHasVoice) {
-      // Only voice - use voice score directly
-      const voiceMinutes = friend.voice_seconds / 60;
-      combinedScore = Math.min(voiceMinutes / 600, 1) * 100;
-    } else {
-      // Only text - use text score directly
-      combinedScore = Math.min(friend.text_interaction_score / 100, 1) * 100;
-    }
+    const combinedScore = voiceContribution + textContribution;
 
     return {
       ...friend,
@@ -645,8 +631,13 @@ export async function getCombinedTopFriends(
     };
   });
 
-  // Sort by combined score and limit
+  // Sort by combined score (highest first), then by voice_seconds as tiebreaker
   return friends
-    .sort((a, b) => b.combined_score - a.combined_score)
+    .sort((a, b) => {
+      if (b.combined_score !== a.combined_score) {
+        return b.combined_score - a.combined_score;
+      }
+      return b.voice_seconds - a.voice_seconds;
+    })
     .slice(0, limit);
 }
