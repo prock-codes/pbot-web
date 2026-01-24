@@ -7,6 +7,7 @@ import {
   ServerActivityWeight,
   CombinedFriend,
 } from '@/types';
+import { calculateVoiceConnections } from './voice-connections';
 
 const TIME_RANGE_DAYS: Record<ConnectionTimeRange, number | null> = {
   '30d': 30,
@@ -488,6 +489,24 @@ export async function getCombinedTopFriends(
   userId: string,
   limit: number = 5
 ): Promise<CombinedFriend[]> {
+  // Check if voice connections cache is stale and refresh if needed
+  const maxAgeHours = 24;
+  const { data: cacheCheck } = await supabase
+    .from('voice_connections')
+    .select('calculated_at')
+    .eq('guild_id', guildId)
+    .eq('time_range', 'all')
+    .limit(1)
+    .single();
+
+  const isStale =
+    !cacheCheck?.calculated_at ||
+    Date.now() - new Date(cacheCheck.calculated_at).getTime() > maxAgeHours * 60 * 60 * 1000;
+
+  if (isStale) {
+    await calculateVoiceConnections(guildId, 'all');
+  }
+
   // Get server activity weight
   const weight = await getServerActivityWeight(guildId);
 
