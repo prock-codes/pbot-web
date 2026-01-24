@@ -18,7 +18,6 @@ END $$;
 SELECT
   user_id,
   channel_id,
-  channel_name,
   joined_at,
   NOW() - joined_at as "time_since_join",
   EXTRACT(EPOCH FROM (NOW() - joined_at)) / 3600 as "hours_if_still_active"
@@ -35,7 +34,6 @@ ORDER BY joined_at ASC;
 SELECT
   user_id,
   channel_id,
-  channel_name,
   joined_at,
   left_at,
   duration_seconds,
@@ -54,7 +52,7 @@ LIMIT 100;
 SELECT
   s1.user_id as user_a,
   s2.user_id as user_b,
-  s1.channel_name,
+  s1.channel_id,
   s1.joined_at as a_joined,
   s1.left_at as a_left,
   s2.joined_at as b_joined,
@@ -152,7 +150,7 @@ WHERE guild_id = 'YOUR_GUILD_ID'
 WITH ordered_sessions AS (
   SELECT
     user_id,
-    channel_name,
+    channel_id,
     joined_at,
     left_at,
     LAG(left_at) OVER (PARTITION BY user_id, channel_id ORDER BY joined_at) as prev_left_at
@@ -163,7 +161,7 @@ WITH ordered_sessions AS (
 )
 SELECT
   user_id,
-  channel_name,
+  channel_id,
   prev_left_at as "previous_session_ended",
   joined_at as "new_session_started",
   EXTRACT(EPOCH FROM (joined_at - prev_left_at)) / 60 as "gap_minutes"
