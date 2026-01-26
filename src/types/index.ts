@@ -232,3 +232,28 @@ export interface CombinedFriend {
   text_shared_channels: number;
   combined_score: number; // Weighted combination of voice and text
 }
+
+// Achievement Types
+export type AchievementCategory = 'milestone' | 'streak' | 'time' | 'social' | 'activity' | 'fun' | 'reaction';
+
+export interface AchievementDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: AchievementCategory;
+  xp: number;
+}
+
+export interface MemberAchievement {
+  id: number;
+  guild_id: string;
+  user_id: string;
+  achievement_id: string;
+  xp_awarded: number;
+  earned_at: string;
+}
+
+export interface EarnedAchievement extends AchievementDefinition {
+  earned_at: string;
+  xp_awarded: number;
+}

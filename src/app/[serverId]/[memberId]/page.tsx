@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton, CardSkeleton, StatCardSkeleton } from '@/components/ui/skeleton';
 import { MemberActivityChart } from '@/components/charts/member-activity-chart';
 import { VoiceTimeline } from '@/components/profile/voice-timeline';
+import { AchievementsSection } from '@/components/profile/achievements';
 import {
   formatNumber,
   formatVoiceTime,
@@ -24,7 +25,8 @@ import {
 import { getMemberRank } from '@/lib/queries/members';
 import { getServer } from '@/lib/queries/server';
 import { getCombinedTopFriends, getServerActivityWeight } from '@/lib/queries/text-connections';
-import { MemberWithLevel, EmojiUsage, Guild, CombinedFriend, ServerActivityWeight } from '@/types';
+import { getMemberAchievements } from '@/lib/queries/achievements';
+import { MemberWithLevel, EmojiUsage, Guild, CombinedFriend, ServerActivityWeight, EarnedAchievement } from '@/types';
 import {
   MessageSquare,
   Mic,
@@ -45,19 +47,21 @@ export default function MemberProfilePage() {
   const [topEmojis, setTopEmojis] = useState<EmojiUsage[]>([]);
   const [topFriends, setTopFriends] = useState<CombinedFriend[]>([]);
   const [activityWeight, setActivityWeight] = useState<ServerActivityWeight | null>(null);
+  const [achievements, setAchievements] = useState<EarnedAchievement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [serverData, memberData, rankData, emojisData, friendsData, weightData] = await Promise.all([
+        const [serverData, memberData, rankData, emojisData, friendsData, weightData, achievementsData] = await Promise.all([
           getServer(serverId),
           getMemberProfile(serverId, memberId),
           getMemberRank(serverId, memberId),
           getMemberTopEmojis(serverId, memberId, 10),
           getCombinedTopFriends(serverId, memberId, 5),
           getServerActivityWeight(serverId),
+          getMemberAchievements(serverId, memberId),
         ]);
 
         setServer(serverData);
@@ -66,6 +70,7 @@ export default function MemberProfilePage() {
         setTopEmojis(emojisData);
         setTopFriends(friendsData);
         setActivityWeight(weightData);
+        setAchievements(achievementsData);
       } catch (err) {
         setError('Failed to load member profile');
         console.error(err);
@@ -213,6 +218,16 @@ export default function MemberProfilePage() {
       <div className="mb-8">
         <VoiceTimeline serverId={serverId} memberId={memberId} />
       </div>
+
+      {/* Achievements */}
+      {achievements.length > 0 && (
+        <div className="mb-8">
+          <AchievementsSection
+            achievements={achievements}
+            totalXp={achievements.reduce((sum, a) => sum + a.xp_awarded, 0)}
+          />
+        </div>
+      )}
 
       {/* Top Friends and Top Emojis */}
       <div className="grid gap-6 md:grid-cols-2">
