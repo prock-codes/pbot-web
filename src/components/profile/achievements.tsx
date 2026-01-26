@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { EarnedAchievement, AchievementCategory } from '@/types';
-import { CATEGORY_INFO, TOTAL_ACHIEVEMENTS } from '@/lib/achievements';
+import { EarnedAchievement, AchievementCategory, AchievementDefinition } from '@/types';
+import { CATEGORY_INFO, TOTAL_ACHIEVEMENTS, ACHIEVEMENT_DEFINITIONS } from '@/lib/achievements';
 import { formatLocalDate } from '@/lib/utils';
 import {
   Award,
@@ -16,6 +16,7 @@ import {
   Trophy,
   ChevronDown,
   ChevronUp,
+  HelpCircle,
 } from 'lucide-react';
 
 // Category icons mapping
@@ -40,11 +41,11 @@ const CATEGORY_BG: Record<AchievementCategory, string> = {
   reaction: 'bg-red-500/10 border-red-500/30 hover:bg-red-500/20',
 };
 
-interface AchievementBadgeProps {
+interface EarnedAchievementBadgeProps {
   achievement: EarnedAchievement;
 }
 
-function AchievementBadge({ achievement }: AchievementBadgeProps) {
+function EarnedAchievementBadge({ achievement }: EarnedAchievementBadgeProps) {
   const Icon = CATEGORY_ICONS[achievement.category];
   const categoryInfo = CATEGORY_INFO[achievement.category];
   const bgClass = CATEGORY_BG[achievement.category];
@@ -69,6 +70,35 @@ function AchievementBadge({ achievement }: AchievementBadgeProps) {
   );
 }
 
+interface LockedAchievementBadgeProps {
+  achievement: AchievementDefinition;
+}
+
+function LockedAchievementBadge({ achievement }: LockedAchievementBadgeProps) {
+  return (
+    <div
+      className="group relative flex items-center gap-3 p-3 rounded-lg border border-discord-lighter/20 bg-discord-darker/50 opacity-60"
+      title={`${achievement.name}: ${achievement.description}`}
+    >
+      <div className="flex-shrink-0 text-gray-600">
+        <HelpCircle className="w-6 h-6" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-500 truncate">???</p>
+        <p className="text-xs text-gray-600 truncate">{achievement.description}</p>
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <p className="text-xs font-medium text-gray-600">+{achievement.xp} XP</p>
+      </div>
+    </div>
+  );
+}
+
+// Union type for display
+type DisplayAchievement =
+  | { type: 'earned'; data: EarnedAchievement }
+  | { type: 'locked'; data: AchievementDefinition };
+
 interface AchievementsSectionProps {
   achievements: EarnedAchievement[];
   totalXp: number;
@@ -89,19 +119,37 @@ export function AchievementsSection({ achievements, totalXp }: AchievementsSecti
     'reaction',
   ];
 
-  // Filter achievements by selected category
+  // Create a set of earned achievement IDs for quick lookup
+  const earnedIds = new Set(achievements.map((a) => a.id));
+
+  // Build combined list: earned first (sorted by earned_at desc), then locked
+  const allDisplayAchievements: DisplayAchievement[] = [
+    // Earned achievements first, sorted by most recent
+    ...achievements
+      .slice()
+      .sort((a, b) => new Date(b.earned_at).getTime() - new Date(a.earned_at).getTime())
+      .map((a): DisplayAchievement => ({ type: 'earned', data: a })),
+    // Then locked achievements (ones not earned)
+    ...ACHIEVEMENT_DEFINITIONS
+      .filter((def) => !earnedIds.has(def.id))
+      .map((def): DisplayAchievement => ({ type: 'locked', data: def })),
+  ];
+
+  // Filter by selected category
   const filteredAchievements =
     selectedCategory === 'all'
-      ? achievements
-      : achievements.filter((a) => a.category === selectedCategory);
+      ? allDisplayAchievements
+      : allDisplayAchievements.filter((a) => a.data.category === selectedCategory);
 
   // Show only first 6 when not expanded
   const displayedAchievements = expanded ? filteredAchievements : filteredAchievements.slice(0, 6);
   const hasMore = filteredAchievements.length > 6;
 
-  if (achievements.length === 0) {
-    return null;
-  }
+  // Count earned per category
+  const earnedByCategory = (cat: AchievementCategory) =>
+    achievements.filter((a) => a.category === cat).length;
+  const totalByCategory = (cat: AchievementCategory) =>
+    ACHIEVEMENT_DEFINITIONS.filter((a) => a.category === cat).length;
 
   return (
     <Card>
@@ -122,12 +170,8 @@ export function AchievementsSection({ achievements, totalXp }: AchievementsSecti
         <div className="flex flex-wrap gap-2 mt-3">
           {categories.map((cat) => {
             const isSelected = selectedCategory === cat;
-            const count =
-              cat === 'all'
-                ? achievements.length
-                : achievements.filter((a) => a.category === cat).length;
-
-            if (cat !== 'all' && count === 0) return null;
+            const earnedCount = cat === 'all' ? achievements.length : earnedByCategory(cat);
+            const totalCount = cat === 'all' ? TOTAL_ACHIEVEMENTS : totalByCategory(cat);
 
             const Icon = cat === 'all' ? Award : CATEGORY_ICONS[cat];
             const colorClass =
@@ -149,7 +193,7 @@ export function AchievementsSection({ achievements, totalXp }: AchievementsSecti
               >
                 <Icon className={`w-3 h-3 ${colorClass}`} />
                 <span>{cat === 'all' ? 'All' : CATEGORY_INFO[cat].name}</span>
-                <span className="text-gray-500">({count})</span>
+                <span className="text-gray-500">({earnedCount}/{totalCount})</span>
               </button>
             );
           })}
@@ -157,9 +201,13 @@ export function AchievementsSection({ achievements, totalXp }: AchievementsSecti
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 sm:grid-cols-2">
-          {displayedAchievements.map((achievement) => (
-            <AchievementBadge key={achievement.id} achievement={achievement} />
-          ))}
+          {displayedAchievements.map((item) =>
+            item.type === 'earned' ? (
+              <EarnedAchievementBadge key={item.data.id} achievement={item.data} />
+            ) : (
+              <LockedAchievementBadge key={item.data.id} achievement={item.data} />
+            )
+          )}
         </div>
 
         {hasMore && (

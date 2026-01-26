@@ -220,14 +220,12 @@ export default function MemberProfilePage() {
       </div>
 
       {/* Achievements */}
-      {achievements.length > 0 && (
-        <div className="mb-8">
-          <AchievementsSection
-            achievements={achievements}
-            totalXp={achievements.reduce((sum, a) => sum + a.xp_awarded, 0)}
-          />
-        </div>
-      )}
+      <div className="mb-8">
+        <AchievementsSection
+          achievements={achievements}
+          totalXp={achievements.reduce((sum, a) => sum + a.xp_awarded, 0)}
+        />
+      </div>
 
       {/* Top Friends and Top Emojis */}
       <div className="grid gap-6 md:grid-cols-2">
