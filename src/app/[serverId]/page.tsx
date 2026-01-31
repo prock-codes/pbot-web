@@ -47,12 +47,15 @@ export default async function ServerPage({ params }: ServerPageProps) {
   return (
     <div className="max-w-6xl mx-auto">
       {/* Server Header */}
-      <div className="flex items-center gap-4 mb-8">
-        <Avatar src={server.icon_url} alt={server.name} size="xl" />
+      <div className="flex items-center gap-6 mb-10 animate-fade-in-up">
+        <div className="relative">
+          <div className="absolute -inset-2 bg-gradient-to-r from-discord-blurple to-discord-pink rounded-full blur-xl opacity-30 animate-pulse-glow" />
+          <Avatar src={server.icon_url} alt={server.name} size="xl" ring ringColor="gradient" />
+        </div>
         <div>
-          <h1 className="text-3xl font-bold text-white">{server.name}</h1>
-          <p className="text-gray-400">
-            {formatNumber(stats.totalMembers)} members with XP
+          <h1 className="text-4xl font-bold text-white tracking-tight">{server.name}</h1>
+          <p className="text-gray-400 mt-1">
+            <span className="text-discord-blurple font-semibold">{formatNumber(stats.totalMembers)}</span> members with XP
           </p>
         </div>
       </div>
