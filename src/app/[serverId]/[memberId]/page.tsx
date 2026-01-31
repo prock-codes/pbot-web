@@ -11,6 +11,7 @@ import { Skeleton, CardSkeleton, StatCardSkeleton } from '@/components/ui/skelet
 import { MemberActivityChart } from '@/components/charts/member-activity-chart';
 import { VoiceTimeline } from '@/components/profile/voice-timeline';
 import { AchievementsSection } from '@/components/profile/achievements';
+import { VibeCheck } from '@/components/profile/vibe-check';
 import {
   formatNumber,
   formatVoiceTime,
@@ -207,6 +208,11 @@ export default function MemberProfilePage() {
           </div>
           <p className="text-2xl font-bold text-white">#{rank}</p>
         </Card>
+      </div>
+
+      {/* Vibe Check */}
+      <div className="mb-8">
+        <VibeCheck member={member} topEmojis={topEmojis} />
       </div>
 
       {/* Activity Chart */}
