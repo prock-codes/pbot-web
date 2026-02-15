@@ -1,0 +1,325 @@
+/*
+  Pokemon Card Holographic CSS Effects
+  Based on: https://github.com/simeydotme/pokemon-cards-css
+  License: GPL-3.0
+*/
+
+/* ==========================================
+   CARD BASE STRUCTURE
+   ========================================== */
+
+.card {
+  --card-aspect: 0.718;
+  --card-radius: 4.55% / 3.5%;
+  --card-edge: hsl(47, 100%, 78%);
+  --card-back: hsl(205, 100%, 25%);
+  --card-glow: hsl(55, 100%, 70%);
+
+  --red: #f80e35;
+  --yellow: #eedf10;
+  --green: #21e985;
+  --blue: #0dbde9;
+  --violet: #c929f1;
+
+  --pointer-x: 50%;
+  --pointer-y: 50%;
+  --card-scale: 1;
+  --card-opacity: 0;
+  --translate-x: 0px;
+  --translate-y: 0px;
+  --rotate-x: 0deg;
+  --rotate-y: 0deg;
+  --background-x: 50%;
+  --background-y: 50%;
+  --pointer-from-center: 0;
+  --pointer-from-top: 0.5;
+  --pointer-from-left: 0.5;
+
+  z-index: 2;
+  will-change: transform, visibility, z-index;
+  transform-style: preserve-3d;
+}
+
+.card,
+.card * {
+  outline: 1px solid transparent;
+}
+
+.card,
+.card__rotator {
+  aspect-ratio: var(--card-aspect);
+  border-radius: var(--card-radius);
+}
+
+.card.interacting {
+  z-index: 120;
+}
+
+.card__translater,
+.card__rotator {
+  display: grid;
+  perspective: 600px;
+  will-change: transform, box-shadow;
+  transform-origin: center;
+  transform-style: preserve-3d;
+}
+
+.card__translater {
+  width: auto;
+  position: relative;
+  transform: translate3d(var(--translate-x), var(--translate-y), 0px) scale(var(--card-scale));
+}
+
+.card__rotator {
+  transform: rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  transform-style: preserve-3d;
+  border: none;
+  background: transparent;
+  padding: 0;
+  appearance: none;
+  cursor: grab;
+}
+
+/* Shadow & Glow */
+.card__rotator {
+  transition: box-shadow 0.4s ease, opacity 0.33s ease-out;
+  box-shadow:
+    0 0 3px -1px transparent,
+    0 0 2px 1px transparent,
+    0 0 5px 0px transparent,
+    0px 10px 20px -5px rgba(0, 0, 0, 0.5),
+    0 2px 15px -5px rgba(0, 0, 0, 0.4),
+    0 0 20px 0px transparent;
+}
+
+.card.interacting .card__rotator {
+  box-shadow:
+    0 0 3px -1px white,
+    0 0 3px 1px var(--card-edge),
+    0 0 12px 2px var(--card-glow),
+    0px 10px 20px -5px rgba(0, 0, 0, 0.5),
+    0 0 40px -30px var(--card-glow),
+    0 0 50px -20px var(--card-glow);
+}
+
+/* ==========================================
+   CARD FRONT — grid stacking for layers
+   ========================================== */
+
+.card__front {
+  display: grid;
+  width: 100%;
+  aspect-ratio: var(--card-aspect);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  transform-style: preserve-3d;
+}
+
+.card__front > * {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--card-radius);
+}
+
+.card__front img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: translate3d(0px, 0px, 0.01px);
+  backface-visibility: hidden;
+}
+
+/* ==========================================
+   SHINE LAYER (Holographic Rainbow Effect)
+   ========================================== */
+
+.card__shine {
+  position: relative;
+  display: grid;
+  transform: translateZ(1px);
+  overflow: hidden;
+  z-index: 3;
+  mix-blend-mode: color-dodge;
+  opacity: var(--card-opacity);
+  transition: opacity 0.15s ease;
+
+  --space: 4%;
+
+  background-image:
+    url("/img/cosmos-bottom.png"),
+    repeating-linear-gradient(
+      82deg,
+      hsl(53, 65%, 60%) calc(var(--space) * 1),
+      hsl(93, 56%, 50%) calc(var(--space) * 2),
+      hsl(176, 54%, 49%) calc(var(--space) * 3),
+      hsl(228, 59%, 55%) calc(var(--space) * 4),
+      hsl(283, 60%, 55%) calc(var(--space) * 5),
+      hsl(326, 59%, 51%) calc(var(--space) * 6),
+      hsl(326, 59%, 51%) calc(var(--space) * 7),
+      hsl(283, 60%, 55%) calc(var(--space) * 8),
+      hsl(228, 59%, 55%) calc(var(--space) * 9),
+      hsl(176, 54%, 49%) calc(var(--space) * 10),
+      hsl(93, 56%, 50%) calc(var(--space) * 11),
+      hsl(53, 65%, 60%) calc(var(--space) * 12)
+    ),
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      hsla(180, 100%, 89%, 0.5) 5%,
+      hsla(180, 14%, 57%, 0.3) 40%,
+      hsl(0, 0%, 0%) 130%
+    );
+
+  background-blend-mode: color-burn, multiply;
+
+  background-position:
+    center center,
+    calc(10% + (var(--pointer-from-left) * 80%)) calc(10% + (var(--pointer-from-top) * 80%)),
+    center center;
+
+  background-size: cover, 400% 900%, cover;
+
+  filter: brightness(0.75) contrast(0.9) saturate(0.4);
+}
+
+.card__shine:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--card-radius);
+
+  background-image:
+    url("/img/cosmos-middle-trans.png"),
+    repeating-linear-gradient(
+      82deg,
+      hsl(53, 65%, 60%) calc(var(--space) * 1),
+      hsl(93, 56%, 50%) calc(var(--space) * 2),
+      hsl(176, 54%, 49%) calc(var(--space) * 3),
+      hsl(228, 59%, 55%) calc(var(--space) * 4),
+      hsl(283, 60%, 55%) calc(var(--space) * 5),
+      hsl(326, 59%, 51%) calc(var(--space) * 6),
+      hsl(326, 59%, 51%) calc(var(--space) * 7),
+      hsl(283, 60%, 55%) calc(var(--space) * 8),
+      hsl(228, 59%, 55%) calc(var(--space) * 9),
+      hsl(176, 54%, 49%) calc(var(--space) * 10),
+      hsl(93, 56%, 50%) calc(var(--space) * 11),
+      hsl(53, 65%, 60%) calc(var(--space) * 12)
+    );
+
+  background-blend-mode: lighten, multiply;
+
+  background-position:
+    center center,
+    calc(15% + (var(--pointer-from-left) * 70%)) calc(15% + (var(--pointer-from-top) * 70%));
+
+  background-size: cover, 400% 900%;
+
+  filter: brightness(0.9) contrast(1.3) saturate(0.4);
+  mix-blend-mode: overlay;
+}
+
+.card__shine:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--card-radius);
+
+  background-image:
+    url("/img/cosmos-top-trans.png"),
+    repeating-linear-gradient(
+      82deg,
+      hsl(53, 65%, 60%) calc(var(--space) * 1),
+      hsl(93, 56%, 50%) calc(var(--space) * 2),
+      hsl(176, 54%, 49%) calc(var(--space) * 3),
+      hsl(228, 59%, 55%) calc(var(--space) * 4),
+      hsl(283, 60%, 55%) calc(var(--space) * 5),
+      hsl(326, 59%, 51%) calc(var(--space) * 6),
+      hsl(326, 59%, 51%) calc(var(--space) * 7),
+      hsl(283, 60%, 55%) calc(var(--space) * 8),
+      hsl(228, 59%, 55%) calc(var(--space) * 9),
+      hsl(176, 54%, 49%) calc(var(--space) * 10),
+      hsl(93, 56%, 50%) calc(var(--space) * 11),
+      hsl(53, 65%, 60%) calc(var(--space) * 12)
+    );
+
+  background-blend-mode: multiply, multiply;
+
+  background-position:
+    center center,
+    calc(20% + (var(--pointer-from-left) * 60%)) calc(20% + (var(--pointer-from-top) * 60%));
+
+  background-size: cover, 400% 900%;
+
+  filter: brightness(0.9) contrast(1.3) saturate(0.4);
+  mix-blend-mode: multiply;
+}
+
+/* ==========================================
+   GLARE LAYER (Light reflection)
+   ========================================== */
+
+.card__glare {
+  position: relative;
+  transform: translateZ(1.41px);
+  overflow: hidden;
+  z-index: 4;
+  opacity: calc(var(--card-opacity) * (0.2 + var(--pointer-from-center) * 0.6));
+  filter: brightness(0.75) contrast(1.5) saturate(0.6);
+  mix-blend-mode: overlay;
+  transition: opacity 0.15s ease;
+
+  background-image: radial-gradient(
+    farthest-corner circle at var(--pointer-x) var(--pointer-y),
+    hsla(204, 100%, 95%, 0.8) 5%,
+    hsla(250, 15%, 20%, 1) 150%
+  );
+}
+
+.card__glare:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--card-radius);
+
+  background-image:
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      hsl(280, 100%, 96%) 5%,
+      hsl(0, 0%, 10%) 60%
+    );
+
+  filter: brightness(0.75) contrast(1.5) saturate(0.6);
+  mix-blend-mode: soft-light;
+  opacity: calc(1 - var(--pointer-from-top) * 0.75);
+}
+
+/* ==========================================
+   TRANSITION STATES
+   ========================================== */
+
+.card:not(.interacting) .card__translater,
+.card:not(.interacting) .card__rotator {
+  transition: transform 0.65s ease-out, box-shadow 0.65s ease-out;
+}
+
+.card:not(.interacting) .card__shine,
+.card:not(.interacting) .card__glare {
+  transition: opacity 0.65s ease-out, background-position 0.65s ease-out, background-size 0.65s ease-out;
+}
+
+.card__shine,
+.card__glare {
+  will-change: transform, opacity, background-image, background-size,
+    background-position, background-blend-mode, filter;
+}
+
+/* ==========================================
+   RESPONSIVE
+   ========================================== */
+
+@media screen and (max-width: 900px) {
+  .card__shine {
+    --scanlines-space: 0.5px;
+  }
+}
