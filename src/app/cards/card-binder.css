@@ -1,12 +1,54 @@
 /* ==========================================
+   ANIMATED PAGE BACKGROUND
+   ========================================== */
+
+.cards-page-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(
+      -45deg,
+      rgba(15, 12, 41, 0.4),
+      rgba(26, 16, 64, 0.3),
+      rgba(13, 31, 60, 0.35),
+      rgba(27, 17, 53, 0.3),
+      rgba(15, 12, 41, 0.4)
+    ),
+    rgb(30, 31, 34);
+  background-size: 400% 400%, 100% 100%;
+  animation: bgShift 25s ease infinite;
+}
+
+.cards-page-bg {
+  position: relative;
+}
+
+.cards-page-bg .binder-wrapper,
+.cards-page-bg .binder__page-indicator {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes bgShift {
+  0% { background-position: 0% 50%, center; }
+  25% { background-position: 100% 25%, center; }
+  50% { background-position: 100% 50%, center; }
+  75% { background-position: 0% 75%, center; }
+  100% { background-position: 0% 50%, center; }
+}
+
+/* ==========================================
    CARD BINDER — 3-ring binder layout
    ========================================== */
 
-/* Outer binder wrapper (positions nav arrows) */
+/* Outer binder wrapper — fixed design size, scaled via JS transform */
 .binder-wrapper {
   position: relative;
-  width: min(850px, 85vw);
-  flex-shrink: 1;
+  width: 820px;
+  flex-shrink: 0;
+  will-change: transform;
 }
 
 /* Binder container — leather texture */
@@ -220,49 +262,4 @@
    RESPONSIVE
    ========================================== */
 
-@media (max-width: 768px) {
-  .binder {
-    padding: 16px 16px 16px 44px;
-  }
-
-  .binder__grid {
-    gap: 6px;
-  }
-
-  .binder__ring {
-    left: 10px;
-    width: 22px;
-    height: 22px;
-  }
-
-  .binder__nav-btn--prev { left: -46px; }
-  .binder__nav-btn--next { right: -46px; }
-}
-
-@media (max-width: 480px) {
-  .binder-wrapper {
-    width: 95vw;
-  }
-
-  .binder {
-    padding: 12px 12px 12px 36px;
-  }
-
-  .binder__grid {
-    gap: 4px;
-  }
-
-  .binder__ring {
-    left: 6px;
-    width: 18px;
-    height: 18px;
-  }
-
-  .binder__nav-btn {
-    width: 32px;
-    height: 32px;
-  }
-
-  .binder__nav-btn--prev { left: -38px; }
-  .binder__nav-btn--next { right: -38px; }
-}
+/* Responsive breakpoints removed — JS transform scaling handles all viewport sizes */

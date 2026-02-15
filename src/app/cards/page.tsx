@@ -111,6 +111,7 @@ const cards: CardConfig[] = [
   { id: 'forest-sprite', src: '/forest-sprite.png', alt: 'Forest Sprite Pokemon Card, Holographic' },
   { id: 'jordy', src: '/jordy.png', alt: 'Cunning Warlock Pokemon Card, Holographic' },
   { id: 'nick-punkrock', src: '/nick-punkrock.png', alt: 'Nick Sims punkrock look'},
+  { id: 'bg-lift', src: '/bg-lift.png', alt: 'BG Lift Card, Holographic' },
 ];
 
 function HoloCard({ card, onClick }: { card: CardConfig; onClick: () => void }) {
@@ -205,9 +206,39 @@ function ExpandedCard({ card, onClose }: { card: CardConfig; onClose: () => void
 
 const CARDS_PER_PAGE = 9;
 
+// Fixed design size for the binder — scaled via transform to fit the viewport
+const BINDER_WIDTH = 820;
+const BINDER_ASPECT = 1.42; // height / width ratio of the full binder
+
+function useBinderScale() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const update = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const padX = 120; // room for nav arrows + breathing
+      const padY = 80;  // room for page indicator + breathing
+      const availW = rect.width - padX;
+      const availH = rect.height - padY;
+      const binderH = BINDER_WIDTH * BINDER_ASPECT;
+      const s = Math.min(availW / BINDER_WIDTH, availH / binderH, 1);
+      setScale(Math.max(0.3, s));
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  return { containerRef, scale };
+}
+
 export default function CardDemoPage() {
   const [expandedCard, setExpandedCard] = useState<CardConfig | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
+  const { containerRef, scale } = useBinderScale();
 
   const totalPages = Math.max(1, Math.ceil(cards.length / CARDS_PER_PAGE));
   const pageCards = cards.slice(currentPage * CARDS_PER_PAGE, (currentPage + 1) * CARDS_PER_PAGE);
@@ -218,8 +249,11 @@ export default function CardDemoPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col items-center justify-center gap-4 -my-8 py-6 overflow-hidden">
-      <div className="binder-wrapper">
+    <div ref={containerRef} className="cards-page-bg h-screen flex flex-col items-center justify-center gap-4 -my-8 py-6 overflow-hidden">
+      <div
+        className="binder-wrapper"
+        style={{ transform: `scale(${scale})`, transformOrigin: 'center center' }}
+      >
         <button
           className="binder__nav-btn binder__nav-btn--prev"
           onClick={() => setCurrentPage((p) => p - 1)}
