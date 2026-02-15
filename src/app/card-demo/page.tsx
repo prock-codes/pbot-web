@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import './pokemon-card.css';
+import './card-binder.css';
 
 // --- Math helpers (from pokemon-cards-css) ---
 const round = (value: number, precision = 3) => parseFloat(value.toFixed(precision));
@@ -121,10 +123,7 @@ function HoloCard({ card, onClick }: { card: CardConfig; onClick: () => void }) 
   return (
     <div
       className={`card ${state.interacting ? 'interacting' : ''}`}
-      style={{
-        ...getDynamicStyles(state),
-        width: 'min(300px, 40vw)',
-      }}
+      style={getDynamicStyles(state)}
     >
       <div className="card__translater">
         <div
@@ -203,23 +202,70 @@ function ExpandedCard({ card, onClose }: { card: CardConfig; onClose: () => void
   );
 }
 
+const CARDS_PER_PAGE = 9;
+
 export default function CardDemoPage() {
   const [expandedCard, setExpandedCard] = useState<CardConfig | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(cards.length / CARDS_PER_PAGE));
+  const pageCards = cards.slice(currentPage * CARDS_PER_PAGE, (currentPage + 1) * CARDS_PER_PAGE);
+
+  const slots: (CardConfig | null)[] = [...pageCards];
+  while (slots.length < CARDS_PER_PAGE) {
+    slots.push(null);
+  }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-8 -mt-8">
-      <h1 className="text-3xl font-bold text-center">
-        Powerspike Cards
-      </h1>
+    <div className="h-[calc(100vh-64px)] flex flex-col items-center justify-center gap-4 -my-8 py-6 overflow-hidden">
+      <div className="binder-wrapper">
+        <button
+          className="binder__nav-btn binder__nav-btn--prev"
+          onClick={() => setCurrentPage((p) => p - 1)}
+          disabled={currentPage === 0}
+          aria-label="Previous page"
+        >
+          <ChevronLeft size={20} />
+        </button>
 
-      <div className="flex flex-wrap items-center justify-center gap-12">
-        {cards.map((card) => (
-          <HoloCard
-            key={card.id}
-            card={card}
-            onClick={() => setExpandedCard(card)}
-          />
-        ))}
+        <button
+          className="binder__nav-btn binder__nav-btn--next"
+          onClick={() => setCurrentPage((p) => p + 1)}
+          disabled={currentPage >= totalPages - 1}
+          aria-label="Next page"
+        >
+          <ChevronRight size={20} />
+        </button>
+
+        <div className="binder">
+          <div className="binder__ring" />
+          <div className="binder__ring" />
+          <div className="binder__ring" />
+
+          <div className="binder__page">
+            <div className="binder__grid">
+              {slots.map((slot, index) => (
+                <div
+                  key={slot ? slot.id : `empty-${index}`}
+                  className={`pocket ${!slot ? 'pocket--empty' : ''}`}
+                >
+                  {slot ? (
+                    <HoloCard
+                      card={slot}
+                      onClick={() => setExpandedCard(slot)}
+                    />
+                  ) : (
+                    <div className="pocket__placeholder" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="binder__page-indicator">
+        Page {currentPage + 1} of {totalPages}
       </div>
 
       {expandedCard && (

@@ -1,0 +1,246 @@
+/* ==========================================
+   CARD BINDER — 3-ring binder layout
+   ========================================== */
+
+/* Outer binder wrapper (positions nav arrows) */
+.binder-wrapper {
+  position: relative;
+  width: min(850px, 85vw);
+  flex-shrink: 1;
+}
+
+/* Binder container — leather texture */
+.binder {
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(60, 30, 15, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 50%, rgba(60, 30, 15, 0.15) 0%, transparent 50%),
+    linear-gradient(145deg, #2a1a0e 0%, #3d2518 30%, #2a1a0e 50%, #3d2518 70%, #2a1a0e 100%);
+  border-radius: 8px;
+  padding: 24px 24px 24px 56px;
+  position: relative;
+  width: 100%;
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+  border: 2px solid #1a0e06;
+  outline: 2px dashed rgba(80, 50, 25, 0.4);
+  outline-offset: -8px;
+}
+
+/* ==========================================
+   RING HOLES
+   ========================================== */
+
+.binder__ring {
+  position: absolute;
+  left: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #d4d4d4, #888 50%, #555 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(255, 255, 255, 0.2);
+  border: 2px solid #444;
+  z-index: 5;
+}
+
+.binder__ring:nth-child(1) { top: 15%; }
+.binder__ring:nth-child(2) { top: 50%; transform: translateY(-50%); }
+.binder__ring:nth-child(3) { bottom: 15%; }
+
+/* ==========================================
+   BINDER PAGE — off-white interior
+   ========================================== */
+
+.binder__page {
+  background: linear-gradient(135deg, #3a3a3f 0%, #45454b 50%, #3a3a3f 100%);
+  border-radius: 4px;
+  padding: 16px;
+  box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ==========================================
+   3×3 GRID
+   ========================================== */
+
+.binder__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, auto);
+  gap: 10px;
+}
+
+/* ==========================================
+   CARD POCKETS — plastic sleeve look
+   ========================================== */
+
+.pocket {
+  aspect-ratio: 0.718;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.03) 40%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  position: relative;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Plastic sheen reflection */
+.pocket::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    transparent 30%,
+    transparent 70%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Inner shadow for depth */
+.pocket::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Empty pocket — darker with dashed outline */
+.pocket--empty {
+  background: linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.06) 0%,
+    rgba(0, 0, 0, 0.03) 50%,
+    rgba(0, 0, 0, 0.06) 100%
+  );
+}
+
+.pocket--empty::after {
+  box-shadow: none;
+}
+
+.pocket--empty .pocket__placeholder {
+  position: absolute;
+  inset: 8%;
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 4.55% / 3.5%;
+  pointer-events: none;
+}
+
+/* Card fills the pocket */
+.pocket .card {
+  width: 100% !important;
+}
+
+/* ==========================================
+   PAGE NAVIGATION
+   ========================================== */
+
+.binder__nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+  z-index: 10;
+}
+
+.binder__nav-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.8);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.binder__nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.binder__nav-btn--prev { left: -52px; }
+.binder__nav-btn--next { right: -52px; }
+
+/* Page indicator */
+.binder__page-indicator {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+/* ==========================================
+   RESPONSIVE
+   ========================================== */
+
+@media (max-width: 768px) {
+  .binder {
+    padding: 16px 16px 16px 44px;
+  }
+
+  .binder__grid {
+    gap: 6px;
+  }
+
+  .binder__ring {
+    left: 10px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .binder__nav-btn--prev { left: -46px; }
+  .binder__nav-btn--next { right: -46px; }
+}
+
+@media (max-width: 480px) {
+  .binder-wrapper {
+    width: 95vw;
+  }
+
+  .binder {
+    padding: 12px 12px 12px 36px;
+  }
+
+  .binder__grid {
+    gap: 4px;
+  }
+
+  .binder__ring {
+    left: 6px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .binder__nav-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .binder__nav-btn--prev { left: -38px; }
+  .binder__nav-btn--next { right: -38px; }
+}
