@@ -106,6 +106,8 @@ const cards: CardConfig[] = [
   { id: 'crunch', src: '/crunch-card1.png', alt: 'Crunch Pokemon Card, Holographic' },
   { id: 'prock', src: '/card2.png', alt: 'Prock - Stage 1 Pokemon Card, Holographic' },
   { id: 'ice', src: '/ice-card2.png', alt: 'Monkey D. Ice - Basic Pokemon Card, Holographic' },
+  { id: 'forest-sprite', src: '/forest-sprite.png', alt: 'Forest Sprite Pokemon Card, Holographic' },
+  { id: 'jordy', src: '/jordy.png', alt: 'Cunning Warlock Pokemon Card, Holographic' },
 ];
 
 function HoloCard({ card, onClick }: { card: CardConfig; onClick: () => void }) {
